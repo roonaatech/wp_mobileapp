@@ -1,0 +1,34 @@
+name: attendance_app
+description: ABiS WorkPulse - Employee attendance, leave, and on-duty management.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.1.0
+  shared_preferences: ^2.2.0
+  geolocator: ^10.1.0
+  device_info_plus: ^9.0.3
+  provider: ^6.0.5
+  google_fonts: ^5.1.0
+  intl: ^0.18.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+  flutter_launcher_icons: ^0.13.1 
+
+flutter:
+  uses-material-design: true
+
+flutter_launcher_icons:             # <-- add this block at the bottom
+  android: true
+  ios: false
+  image_path: "assets/abis_icon.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/abis_icon.png"
