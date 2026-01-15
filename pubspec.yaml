@@ -1,5 +1,5 @@
 name: attendance_app
-description: ABiS WorkPulse - Employee attendance, leave, and on-duty management.
+description: WorkPulse - Employee attendance, leave, and on-duty management.
 publish_to: 'none'
 version: 1.0.0+1
 

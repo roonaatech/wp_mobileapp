@@ -80,7 +80,7 @@ class AppConfig {
   // ============================================
   // APP METADATA
   // ============================================
-  static const String appName = 'ABiS WorkPulse';
+  static const String appName = 'WorkPulse';
   static const String appVersion = '1.0.0';
   static const String appBuild = '1';
   
