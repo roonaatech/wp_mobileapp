@@ -108,7 +108,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.existingLeave != null ? 'Edit Leave' : 'Apply Leave'),
-        backgroundColor: const Color(0xFF2E5090),
+        backgroundColor: const Color(0xFF3B82F6),
         foregroundColor: Colors.white,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -225,7 +225,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                                 'Total: ${_calculateLeaveDays(_startDate!, _endDate!)} day(s) (Sundays excluded)',
                                 style: const TextStyle(
                                   fontSize: 12,
-                                  color: Color(0xFF2E5090),
+                                  color: Color(0xFF3B82F6),
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -303,7 +303,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
               ElevatedButton(
                 onPressed: (_isLoading || _isExceedingLimit() || _hasOverlappingLeave) ? null : _submitLeave,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2E5090),
+                  backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
@@ -330,7 +330,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: Color(0xFF2E5090),
+              primary: Color(0xFF3B82F6),
               onPrimary: Colors.white,
               surface: Colors.white,
               onSurface: Colors.black,

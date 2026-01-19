@@ -189,7 +189,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFF2E5090), Color(0xFF3D6DB3)],
+                colors: [Color(0xFF3B82F6), Color(0xFF8B5CF6)],
               ),
             ),
             child: SafeArea(
@@ -251,7 +251,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                 Icon(
                                   isOnDuty ? Icons.work : Icons.login,
                                   color: isOnDuty
-                                      ? Color(0xFF2E5090) // blue for On-duty
+                                      ? Color(0xFF3B82F6) // blue for On-duty
                                       : (isInProgress ? Colors.green : Colors.grey),
                                   size: 20,
                                 ),
@@ -260,7 +260,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: Color(0xFF2E5090), // blue background
+                                      color: Color(0xFF3B82F6), // blue background
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: const Text(
@@ -281,7 +281,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 16,
-                                      color: isOnDuty ? Color(0xFF2E5090) : null,
+                                      color: isOnDuty ? Color(0xFF3B82F6) : null,
                                     ),
                                   ),
                                 ),

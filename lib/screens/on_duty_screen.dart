@@ -229,7 +229,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF2E5090), Color(0xFF3D6DB3)],
+              colors: [Color(0xFF3B82F6), Color(0xFF8B5CF6)],
             ),
           ),
         ),
@@ -256,7 +256,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              prefixIcon: const Icon(Icons.business, color: Color(0xFF2E5090)),
+              prefixIcon: const Icon(Icons.business, color: Color(0xFF3B82F6)),
               filled: true,
               fillColor: Colors.grey.shade50,
             ),
@@ -273,7 +273,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              prefixIcon: const Icon(Icons.location_on, color: Color(0xFF2E5090)),
+              prefixIcon: const Icon(Icons.location_on, color: Color(0xFF3B82F6)),
               filled: true,
               fillColor: Colors.grey.shade50,
             ),
@@ -290,7 +290,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              prefixIcon: const Icon(Icons.description, color: Color(0xFF2E5090)),
+              prefixIcon: const Icon(Icons.description, color: Color(0xFF3B82F6)),
               filled: true,
               fillColor: Colors.grey.shade50,
             ),
@@ -303,7 +303,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
           ElevatedButton(
             onPressed: _isLoading ? null : (widget.existingLog != null ? _updateOnDuty : _startOnDuty),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2E5090),
+              backgroundColor: const Color(0xFF3B82F6),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
@@ -343,7 +343,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF2E5090), Color(0xFF3D6DB3)],
+              colors: [Color(0xFF3B82F6), Color(0xFF8B5CF6)],
             ),
             borderRadius: BorderRadius.circular(16),
           ),

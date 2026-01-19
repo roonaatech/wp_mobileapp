@@ -110,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required int index,
   }) {
     final isSelected = _currentIndex == index;
-    final color = isSelected ? const Color(0xFF2E5090) : Colors.grey[600];
+    final color = isSelected ? const Color(0xFF3B82F6) : Colors.grey[600];
     
     return InkWell(
       onTap: () => _onTabTapped(index),
@@ -524,7 +524,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF2E5090),
+                        color: Color(0xFF3B82F6),
                       ),
                     ),
                   ),
@@ -573,7 +573,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
               // Date Range
               Row(
                 children: [
-                  const Icon(Icons.calendar_today, size: 16, color: Color(0xFF2E5090)),
+                  const Icon(Icons.calendar_today, size: 16, color: Color(0xFF3B82F6)),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -961,7 +961,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(context),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2E5090),
+                    backgroundColor: const Color(0xFF3B82F6),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                   child: const Text(
@@ -993,7 +993,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
           padding: const EdgeInsets.fromLTRB(20, 50, 20, 20),
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFF2E5090), Color(0xFF3D6DB3)],
+              colors: [Color(0xFF3B82F6), Color(0xFF8B5CF6)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -1054,7 +1054,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.calendar_today, size: 14, color: Color(0xFF2E5090)),
+                    const Icon(Icons.calendar_today, size: 14, color: Color(0xFF3B82F6)),
                     const SizedBox(width: 6),
                     const Text(
                       'Year',
@@ -1076,7 +1076,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                         _selectedYear.toString(),
                         style: const TextStyle(
                           fontSize: 10,
-                          color: Color(0xFF2E5090),
+                          color: Color(0xFF3B82F6),
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -1109,7 +1109,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                             decoration: BoxDecoration(
                               gradient: isSelected
                                   ? const LinearGradient(
-                                      colors: [Color(0xFF2E5090), Color(0xFF3D6DB3)],
+                                      colors: [Color(0xFF3B82F6), Color(0xFF8B5CF6)],
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
                                     )
@@ -1200,7 +1200,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                   width: 30,
                   height: 60,
                   alignment: Alignment.center,
-                  child: const Icon(Icons.chevron_left, color: Color(0xFF2E5090), size: 24),
+                  child: const Icon(Icons.chevron_left, color: Color(0xFF3B82F6), size: 24),
                 ),
               ),
               // Scrollable Cards
@@ -1251,11 +1251,13 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                   width: 30,
                   height: 60,
                   alignment: Alignment.center,
-                  child: const Icon(Icons.chevron_right, color: Color(0xFF2E5090), size: 24),
+                  child: const Icon(Icons.chevron_right, color: Color(0xFF3B82F6), size: 24),
                 ),
               ),
             ],
           ),
+        ),
+      ],
     );
   }
 
@@ -1296,14 +1298,14 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
           padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           child: Row(
             children: [
-              Icon(Icons.event_upcoming, size: 18, color: Color(0xFF2E5090)),
+              Icon(Icons.event, size: 18, color: Color(0xFF3B82F6)),
               SizedBox(width: 8),
               Text(
                 'Upcoming Leaves (Next 90 Days)',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF2E5090),
+                  color: Color(0xFF3B82F6),
                 ),
               ),
             ],
@@ -1369,14 +1371,14 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          isLeave ? const Color(0xFF2E5090) : const Color(0xFFC1272D),
-                          isLeave ? const Color(0xFF3D6DB3) : const Color(0xFFD63A44),
+                          isLeave ? const Color(0xFF3B82F6) : const Color(0xFFC1272D),
+                          isLeave ? const Color(0xFF8B5CF6) : const Color(0xFFD63A44),
                         ],
                       ),
                       borderRadius: BorderRadius.circular(8),
                       boxShadow: [
                         BoxShadow(
-                          color: (isLeave ? const Color(0xFF2E5090) : const Color(0xFFC1272D)).withOpacity(0.2),
+                          color: (isLeave ? const Color(0xFF3B82F6) : const Color(0xFFC1272D)).withOpacity(0.2),
                           blurRadius: 6,
                           offset: const Offset(0, 2),
                         ),
