@@ -339,6 +339,28 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
     });
   }
 
+  List<dynamic> _getUpcomingLeaves() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final ninetyDaysFromNow = today.add(const Duration(days: 90));
+    
+    return _leaves.where((item) {
+      if (item['type'] != 'leave') return false;
+      try {
+        final startDate = DateTime.tryParse(item['start'].toString());
+        if (startDate == null) return false;
+        return (startDate.isAtSameMomentAs(today) || startDate.isAfter(today)) && 
+               startDate.isBefore(ninetyDaysFromNow);
+      } catch (e) {
+        return false;
+      }
+    }).toList()..sort((a, b) {
+       final dateA = DateTime.tryParse(a['start'].toString()) ?? DateTime(2099, 12, 31);
+       final dateB = DateTime.tryParse(b['start'].toString()) ?? DateTime(2099, 12, 31);
+       return dateA.compareTo(dateB);
+    });
+  }
+
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'approved': return const Color(0xFF4CAF50);
@@ -1158,224 +1180,11 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
           child: _isLoading 
             ? const Center(child: CircularProgressIndicator())
             : _filteredLeaves.isEmpty
-              ? Center(child: Text(_selectedFilter == null ? 'No leave history found' : 'No items found for this filter'))
+              ? _buildEmptyStateWithUpcoming()
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: _filteredLeaves.length,
-                  itemBuilder: (context, index) {
-                    final item = _filteredLeaves[index];
-                    final isLeave = item['type'] == 'leave';
-                    final dateRange = _formatDateRange(item);
-
-                    return GestureDetector(
-                      onTap: () => _showDetailsModal(item, isLeave, dateRange),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Colors.white,
-                              Colors.grey[50]!,
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: _getStatusColor(item['status']).withOpacity(0.2),
-                            width: 1.5,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _getStatusColor(item['status']).withOpacity(0.08),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
-                              spreadRadius: 0,
-                            ),
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.03),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          isLeave ? const Color(0xFF2E5090) : const Color(0xFFC1272D),
-                                          isLeave ? const Color(0xFF3D6DB3) : const Color(0xFFD63A44),
-                                        ],
-                                      ),
-                                      borderRadius: BorderRadius.circular(8),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: (isLeave ? const Color(0xFF2E5090) : const Color(0xFFC1272D)).withOpacity(0.2),
-                                          blurRadius: 6,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    child: Text(
-                                      isLeave ? item['title'] : 'On-Duty',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: 0.3,
-                                      ),
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: _getStatusColor(item['status']).withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: _getStatusColor(item['status']).withOpacity(0.4),
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      item['status'],
-                                      style: TextStyle(
-                                        color: _getStatusColor(item['status']),
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 11,
-                                        letterSpacing: 0.2,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        if (!isLeave) ...[
-                                          Text(
-                                            item['title'].toString().replaceAll('On-Duty: ', ''),
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 14,
-                                              color: Colors.grey[900],
-                                              letterSpacing: 0.2,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 6),
-                                        ],
-                                        Row(
-                                          children: [
-                                            Container(
-                                              padding: const EdgeInsets.all(4),
-                                              decoration: BoxDecoration(
-                                                color: Colors.blue[50],
-                                                borderRadius: BorderRadius.circular(6),
-                                              ),
-                                              child: Icon(
-                                                Icons.calendar_today,
-                                                size: 13,
-                                                color: Colors.blue[700],
-                                              ),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              dateRange,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w500,
-                                                fontSize: 12,
-                                                color: Colors.grey[700],
-                                                letterSpacing: 0.1,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (item['status']?.toLowerCase() == 'pending') ...[
-                                const SizedBox(height: 10),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    SizedBox(
-                                      width: 36,
-                                      height: 36,
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            colors: [Colors.blue[50]!, Colors.blue[100]!],
-                                          ),
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: Colors.blue[200]!),
-                                        ),
-                                        child: IconButton(
-                                          icon: Icon(Icons.edit, color: Colors.blue[700], size: 16),
-                                          onPressed: () => (context.findAncestorStateOfType<_HomeScreenState>()?._handleEdit(item)),
-                                          tooltip: 'Edit',
-                                          padding: EdgeInsets.zero,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    SizedBox(
-                                      width: 36,
-                                      height: 36,
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            colors: [Colors.red[50]!, Colors.red[100]!],
-                                          ),
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: Colors.red[200]!),
-                                        ),
-                                        child: IconButton(
-                                          icon: Icon(Icons.delete, color: Colors.red[700], size: 16),
-                                          onPressed: () {
-                                            try {
-                                              int id;
-                                              if (item['id'] is int) {
-                                                id = item['id'];
-                                              } else {
-                                                id = int.parse(item['id'].toString().trim());
-                                              }
-                                              context.findAncestorStateOfType<_LeaveDashboardState>()?._deleteRequest(id);
-                                            } catch (e) {
-                                              print('Error parsing ID: $e, item: ${item['id']}');
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text('Error: Invalid request ID format')),
-                                              );
-                                            }
-                                          },
-                                          tooltip: 'Delete',
-                                          padding: EdgeInsets.zero,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+                  itemBuilder: (context, index) => _buildLeaveItem(_filteredLeaves[index]),
                 ),
         ),
 
@@ -1447,8 +1256,281 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
               ),
             ],
           ),
+    );
+  }
+
+  Widget _buildEmptyStateWithUpcoming() {
+    final upcoming = _getUpcomingLeaves();
+    
+    if (upcoming.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.info_outline, size: 48, color: Colors.grey[400]),
+            const SizedBox(height: 12),
+            Text(
+              _selectedFilter == null ? 'No leave history found' : 'No items found for this filter',
+              style: TextStyle(color: Colors.grey[600], fontSize: 16),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: Center(
+            child: Text(
+              _selectedFilter == null ? 'No leave history found' : 'No items found for this filter',
+              style: TextStyle(color: Colors.grey[600], fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: Row(
+            children: [
+              Icon(Icons.event_upcoming, size: 18, color: Color(0xFF2E5090)),
+              SizedBox(width: 8),
+              Text(
+                'Upcoming Leaves (Next 90 Days)',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2E5090),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            itemCount: upcoming.length,
+            itemBuilder: (context, index) => _buildLeaveItem(upcoming[index]),
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _buildLeaveItem(Map<String, dynamic> item) {
+    final isLeave = item['type'] == 'leave';
+    final dateRange = _formatDateRange(item);
+
+    return GestureDetector(
+      onTap: () => _showDetailsModal(item, isLeave, dateRange),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white,
+              Colors.grey[50]!,
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: _getStatusColor(item['status']).withOpacity(0.2),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _getStatusColor(item['status']).withOpacity(0.08),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+              spreadRadius: 0,
+            ),
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          isLeave ? const Color(0xFF2E5090) : const Color(0xFFC1272D),
+                          isLeave ? const Color(0xFF3D6DB3) : const Color(0xFFD63A44),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: (isLeave ? const Color(0xFF2E5090) : const Color(0xFFC1272D)).withOpacity(0.2),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      isLeave ? item['title'] : 'On-Duty',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _getStatusColor(item['status']).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _getStatusColor(item['status']).withOpacity(0.4),
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      item['status'],
+                      style: TextStyle(
+                        color: _getStatusColor(item['status']),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (!isLeave) ...[
+                          Text(
+                            item['title'].toString().replaceAll('On-Duty: ', ''),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              color: Colors.grey[900],
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                        ],
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: Colors.blue[50],
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Icon(
+                                Icons.calendar_today,
+                                size: 13,
+                                color: Colors.blue[700],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              dateRange,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w500,
+                                fontSize: 12,
+                                color: Colors.grey[700],
+                                letterSpacing: 0.1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (item['status']?.toLowerCase() == 'pending') ...[
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Colors.blue[50]!, Colors.blue[100]!],
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue[200]!),
+                        ),
+                        child: IconButton(
+                          icon: Icon(Icons.edit, color: Colors.blue[700], size: 16),
+                          onPressed: () => (context.findAncestorStateOfType<_HomeScreenState>()?._handleEdit(item)),
+                          tooltip: 'Edit',
+                          padding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Colors.red[50]!, Colors.red[100]!],
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red[200]!),
+                        ),
+                        child: IconButton(
+                          icon: Icon(Icons.delete, color: Colors.red[700], size: 16),
+                          onPressed: () {
+                            try {
+                              int id;
+                              if (item['id'] is int) {
+                                id = item['id'];
+                              } else {
+                                id = int.parse(item['id'].toString().trim());
+                              }
+                              context.findAncestorStateOfType<_LeaveDashboardState>()?._deleteRequest(id);
+                            } catch (e) {
+                              print('Error parsing ID: $e, item: ${item['id']}');
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error: Invalid request ID format')),
+                                );
+                            }
+                          },
+                          tooltip: 'Delete',
+                          padding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
