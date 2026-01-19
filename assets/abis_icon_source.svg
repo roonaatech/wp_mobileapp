@@ -1,19 +1,46 @@
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
   <defs>
-    <linearGradient id='lg' x1='0%' y1='0%' x2='100%' y2='100%'>
-      <stop offset='0%' style='stop-color:#3B82F6'/>
-      <stop offset='100%' style='stop-color:#8B5CF6'/>
+    <!-- Text Match Gradient: Darker Blue to Darker Purple -->
+    <linearGradient id='brandGrad' x1='0%' y1='0%' x2='100%' y2='0%'> <!-- Horizontal like text -->
+      <stop offset='0%' style='stop-color:#2563EB'/> <!-- Blue-600 -->
+      <stop offset='100%' style='stop-color:#7C3AED'/> <!-- Purple-600 -->
+    </linearGradient>
+    
+    <linearGradient id='calGrad' x1='0%' y1='0%' x2='0%' y2='100%'>
+      <stop offset='0%' style='stop-color:#f3f4f6'/>
+      <stop offset='100%' style='stop-color:#e5e7eb'/>
     </linearGradient>
   </defs>
-  <!-- Circle Border -->
-  <circle cx='50' cy='50' r='45' fill='none' stroke='url(#lg)' stroke-width='8'/>
-  
-  <!-- Calendar Icon (Behind Pulse) -->
-  <rect x='32' y='32' width='36' height='36' rx='4' fill='none' stroke='url(#lg)' stroke-width='3' opacity='0.5'/>
-  <line x1='32' y1='42' x2='68' y2='42' stroke='url(#lg)' stroke-width='3' opacity='0.5'/>
-  <line x1='40' y1='28' x2='40' y2='34' stroke='url(#lg)' stroke-width='3' stroke-linecap='round' opacity='0.5'/>
-  <line x1='60' y1='28' x2='60' y2='34' stroke='url(#lg)' stroke-width='3' stroke-linecap='round' opacity='0.5'/>
-  
-  <!-- Pulse (Foreground) -->
-  <path d='M25 50 L40 50 L45 35 L55 65 L60 50 L75 50' fill='none' stroke='url(#lg)' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/>
+
+  <!-- 1. Outer Circle Wrap -->
+  <circle cx="50" cy="50" r="46" fill="none" stroke="url(#brandGrad)" stroke-width="6" />
+
+  <g transform="translate(50 50) scale(0.75) translate(-50 -50)">
+  <!-- 2. Calendar Body (Gray Scale) -->
+  <rect x="22" y="25" width="56" height="50" rx="4" 
+        fill="url(#calGrad)" stroke="#9CA3AF" stroke-width="3" />
+        
+  <!-- Calendar Rings -->
+  <path d="M35 20 v10 M65 20 v10" stroke="#9CA3AF" stroke-width="4" stroke-linecap="round" />
+
+  <!-- Calendar Grid (Simplified) -->
+  <g fill="#D1D5DB">
+     <rect x="28" y="40" width="8" height="8" rx="1" />
+     <rect x="40" y="40" width="8" height="8" rx="1" />
+     <rect x="52" y="40" width="8" height="8" rx="1" />
+     <rect x="64" y="40" width="8" height="8" rx="1" fill="url(#brandGrad)"/> <!-- active day -->
+
+     <rect x="28" y="52" width="8" height="8" rx="1" />
+     <rect x="40" y="52" width="8" height="8" rx="1" />
+     <rect x="52" y="52" width="8" height="8" rx="1" />
+     <rect x="64" y="52" width="8" height="8" rx="1" />
+  </g>
+
+  <!-- 3. Pulse Overlay (Brand Gradient) -->
+  <path d="M10 50 H24 L32 20 L44 85 L56 25 L64 60 H85" 
+        fill="none" stroke="url(#brandGrad)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+        
+  <!-- Pulse Dot -->
+  <circle cx="85" cy="50" r="4" fill="url(#brandGrad)" />
+  </g>
 </svg>
