@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import 'package:table_calendar/table_calendar.dart';
 import '../services/attendance_service.dart';
 
 class ApplyLeaveScreen extends StatefulWidget {
@@ -26,6 +28,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   String? _overlapMessage;
   Map<String, dynamic> _userLeaveBalance = {};
   int? _selectedLeaveBalance = 0;
+  Map<DateTime, String> _existingLeavesStatus = {};
 
   // Calculate leave days excluding Sundays (Sunday = 0 in Dart)
   int _calculateLeaveDays(DateTime startDate, DateTime endDate) {
@@ -48,8 +51,50 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     super.initState();
     Future.microtask(() => _fetchLeaveTypes());
     Future.microtask(() => _fetchUserLeaveBalance());
+    Future.microtask(() => _fetchMyLeaves());
     if (widget.existingLeave != null) {
       _initializeForEdit();
+    }
+  }
+
+  Future<void> _fetchMyLeaves() async {
+    try {
+      final leaves = await Provider.of<AttendanceService>(context, listen: false).getMyLeaves();
+      if (mounted) {
+        final Map<DateTime, String> statusMap = {};
+        for (var leave in leaves) {
+          // Skip rejected leaves if you don't want to show them, or show them in red? 
+          // User asked for "pending and approved".
+          if (leave['status'] == 'Rejected') continue;
+
+          try {
+            // Ensure we handle dates as local to match calendar logic
+            final rawStart = DateTime.parse(leave['start']);
+            final rawEnd = DateTime.parse(leave['end']);
+            
+            final start = rawStart.isUtc ? rawStart.toLocal() : rawStart;
+            final end = rawEnd.isUtc ? rawEnd.toLocal() : rawEnd;
+            
+            final status = leave['status'];
+
+            // Loop through dates
+            DateTime current = start;
+            while (!current.isAfter(end)) {
+              // Normalize date (remove time, ensure local)
+              final dateKey = DateTime(current.year, current.month, current.day);
+              statusMap[dateKey] = status;
+              current = current.add(const Duration(days: 1));
+            }
+          } catch (e) {
+            print('Error parsing leave date: $e');
+          }
+        }
+        setState(() {
+          _existingLeavesStatus = statusMap;
+        });
+      }
+    } catch (e) {
+      print('Failed to fetch existing leaves: $e');
     }
   }
 
@@ -319,36 +364,159 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   }
 
   Future<void> _selectDateRange() async {
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime.now().subtract(const Duration(days: 30)),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-      initialDateRange: _startDate != null && _endDate != null
-          ? DateTimeRange(start: _startDate!, end: _endDate!)
-          : null,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF3B82F6),
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: Colors.black,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
+    // Debug prints
+    print('Opening calendar. Existing leaves status map: ${_existingLeavesStatus.length} entries');
+    _existingLeavesStatus.forEach((k, v) => print('Date: $k, Status: $v'));
 
-    if (picked != null) {
-      setState(() {
-        _startDate = picked.start;
-        _endDate = picked.end;
-      });
-      // Check for overlapping leaves immediately
-      _checkForOverlappingLeaves();
-    }
+    // Custom calendar picker with highligting
+    DateTime? tempStart = _startDate;
+    DateTime? tempEnd = _endDate;
+    DateTime focusedDay = _startDate ?? DateTime.now();
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: SingleChildScrollView(
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            child: StatefulBuilder(
+              builder: (context, setModalState) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                     Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Select Leave Dates', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(ctx),
+                          )
+                        ],
+                      ),
+                    ),
+                    TableCalendar(
+                      firstDay: DateTime.now().subtract(const Duration(days: 30)),
+                      lastDay: DateTime.now().add(const Duration(days: 365)),
+                      focusedDay: focusedDay,
+                      selectedDayPredicate: (day) => false, // We use range selection
+                      rangeStartDay: tempStart,
+                      rangeEndDay: tempEnd,
+                      calendarFormat: CalendarFormat.month,
+                      rangeSelectionMode: RangeSelectionMode.toggledOn,
+                      headerStyle: const HeaderStyle(
+                        formatButtonVisible: false,
+                        titleCentered: true,
+                      ),
+                      availableGestures: AvailableGestures.horizontalSwipe,
+                      onDaySelected: (selectedDay, focused) {
+                         // Switch to range mode logic handled by onRangeSelected usually
+                         setModalState(() {
+                           focusedDay = focused;
+                         });
+                      },
+                      onRangeSelected: (start, end, focused) {
+                        setModalState(() {
+                          tempStart = start;
+                          tempEnd = end;
+                          focusedDay = focused;
+                        });
+                      },
+                      onPageChanged: (focused) {
+                        focusedDay = focused;
+                      },
+                      calendarBuilders: CalendarBuilders(
+                        defaultBuilder: (context, day, focusedDay) {
+                          // Check if day matches existing leave
+                          final dateKey = DateTime(day.year, day.month, day.day);
+                          final status = _existingLeavesStatus[dateKey];
+                          
+                          if (status != null) {
+                            Color color = Colors.grey;
+                            if (status == 'Approved') color = Colors.green.withOpacity(0.3);
+                            if (status == 'Pending') color = Colors.orange.withOpacity(0.3);
+                            
+                            return Container(
+                              margin: const EdgeInsets.all(4),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: color,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '${day.day}',
+                                style: const TextStyle(color: Colors.black87),
+                              ),
+                            );
+                          }
+                          return null; // Use default
+                        },
+                      ),
+                    ),
+                    // Legend
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildLegendItem('Approved', Colors.green.withOpacity(0.3)),
+                        _buildLegendItem('Pending', Colors.orange.withOpacity(0.3)),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          if (tempStart != null) {
+                             Navigator.pop(ctx, DateTimeRange(start: tempStart!, end: tempEnd ?? tempStart!));
+                          } else {
+                            Navigator.pop(ctx);
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                           backgroundColor: const Color(0xFF3B82F6),
+                           foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Confirm Selection'),
+                      ),
+                    ),
+                  )
+                ],
+              );
+            }
+          ),
+        ),
+      ),
+      ),
+    ).then((pickedRange) {
+      if (pickedRange is DateTimeRange) {
+        setState(() {
+          _startDate = pickedRange.start;
+          _endDate = pickedRange.end;
+        });
+        _checkForOverlappingLeaves();
+      }
+    });
+  }
+
+  Widget _buildLegendItem(String label, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 12, height: 12,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 12)),
+      ],
+    );
   }
 
   Future<void> _checkForOverlappingLeaves() async {
@@ -453,6 +621,11 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(widget.existingLeave != null ? 'Leave updated successfully!' : 'Leave applied successfully!')),
         );
+        
+        // Refresh data to show new pending leave and updated balance
+        await _fetchMyLeaves();
+        await _fetchUserLeaveBalance();
+
         // Clear form
         _reasonController.clear();
         setState(() {
