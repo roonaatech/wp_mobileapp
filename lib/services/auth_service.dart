@@ -13,6 +13,13 @@ class AuthConfirmationException implements Exception {
   String toString() => message;
 }
 
+class AuthSetupRequiredException implements Exception {
+  final String message;
+  AuthSetupRequiredException(this.message);
+  @override
+  String toString() => message;
+}
+
 class AuthService with ChangeNotifier {
   String? _token;
   String? _userId;
@@ -68,6 +75,20 @@ class AuthService with ChangeNotifier {
 
       if (response.statusCode != 200) {
         throw Exception(responseData['message']);
+      }
+
+      // Check for Setup Required (Role or Gender missing)
+      final role = responseData['role'];
+      final gender = responseData['gender'];
+
+      // Helper to check if role/gender is invalid
+      // Role: null or 0 means invalid
+      // Gender: null or empty string means invalid
+      final isRoleInvalid = role == null || role == 0 || role == '0';
+      final isGenderInvalid = gender == null || gender == '';
+
+      if (isRoleInvalid || isGenderInvalid) {
+         throw AuthSetupRequiredException("Setup Required");
       }
 
       _token = responseData['accessToken'];
