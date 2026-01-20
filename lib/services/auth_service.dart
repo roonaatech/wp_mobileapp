@@ -6,6 +6,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 import 'activity_logger.dart';
 
+class AuthConfirmationException implements Exception {
+  final String message;
+  AuthConfirmationException(this.message);
+  @override
+  String toString() => message;
+}
+
 class AuthService with ChangeNotifier {
   String? _token;
   String? _userId;
@@ -38,9 +45,9 @@ class AuthService with ChangeNotifier {
     return null; // Using AppConfig instead
   }
 
-  Future<void> login(String email, String password) async {
+  Future<void> login(String email, String password, {bool forceLocal = false}) async {
     final url = AppConfig.authSignIn;
-    print('Attempting login to: $url');
+    print('Attempting login to: $url (Force Local: $forceLocal)');
     try {
       final response = await http.post(
         Uri.parse(url),
@@ -48,10 +55,17 @@ class AuthService with ChangeNotifier {
         body: json.encode({
           'email': email,
           'password': password,
+          'forceLocal': forceLocal,
         }),
       );
 
       final responseData = json.decode(response.body);
+      
+      // Handle Confirmation Request from Backend
+      if (response.statusCode == 200 && responseData['requiresConfirmation'] == true) {
+        throw AuthConfirmationException(responseData['message'] ?? 'External authentication unavailable.');
+      }
+
       if (response.statusCode != 200) {
         throw Exception(responseData['message']);
       }

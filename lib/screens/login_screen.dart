@@ -16,7 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   var _isLoading = false;
   bool _obscurePassword = true;
 
-  Future<void> _submit() async {
+  Future<void> _submit({bool forceLocal = false}) async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -27,11 +27,15 @@ class _LoginScreenState extends State<LoginScreen> {
       await Provider.of<AuthService>(context, listen: false).login(
         _emailController.text,
         _passwordController.text,
+        forceLocal: forceLocal,
       );
       // Navigation is handled by AuthWrapper in main.dart
     } catch (error) {
       final errorMessage = error.toString();
-      if (errorMessage.toLowerCase().contains("inactive")) {
+      
+      if (error is AuthConfirmationException) {
+         _showConfirmationDialog(context, error.message);
+      } else if (errorMessage.toLowerCase().contains("inactive")) {
         _showInactiveDialog(context);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -48,6 +52,150 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
     }
+  }
+
+  void _showConfirmationDialog(BuildContext context, String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.rectangle,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 10.0,
+                offset: Offset(0.0, 10.0),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.blue.shade100, width: 2),
+                ),
+                child: const Text(
+                  '🛡️',
+                  style: TextStyle(fontSize: 32),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Authentication Update',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: const [
+                    Text(
+                      'We noticed a delay in reaching the primary directory server. This sometimes happens due to routine maintenance.',
+                      textAlign: TextAlign.left,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.black54,
+                        height: 1.4,
+                      ),
+                    ),
+                    SizedBox(height: 12),
+                    Text(
+                      'Good news: You can still log in securely!',
+                      textAlign: TextAlign.left,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Your local account is ready to go. Would you like to proceed with local sign-in?',
+                      textAlign: TextAlign.left,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.black54,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () {
+                         Navigator.of(ctx).pop();
+                         setState(() { _isLoading = false; });
+                      },
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: Colors.grey.shade100,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(
+                        'Cancel',
+                        style: TextStyle(
+                            fontSize: 16, 
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey.shade700
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        _submit(forceLocal: true);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF3B82F6),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Text(
+                        'Yes, Log In',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showInactiveDialog(BuildContext context) {
