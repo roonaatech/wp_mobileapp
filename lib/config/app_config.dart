@@ -10,14 +10,14 @@ class AppConfig {
   // For Production: https://api.roonaa.in:3343
   
   static const String _androidEmulatorUrl = 'http://10.0.2.2:3000';
-  static const String _physicalDeviceUrl = 'http://10.2.1.113:3000';
+  static const String _testServerUrl = 'https://api.workpulse-uat.roonaa.in:3343';
   static const String _iosSimulatorUrl = 'http://localhost:3000';
   static const String _productionUrl = 'https://api.roonaa.in:3343';
 
   // Get the appropriate base URL based on platform and environment
   static String get apiBaseUrl {
     // For production/release builds, use production server
-    // For development/debug builds, use local/emulator URLs
+    // For development/debug builds, use test server for functional testing
     
     // Check if running in release mode
     const bool isReleaseMode = bool.fromEnvironment('dart.vm.product');
@@ -27,15 +27,9 @@ class AppConfig {
       return _productionUrl;
     }
     
-    // Development/Debug mode - use local URLs
-    if (Platform.isAndroid) {
-      // Use emulator URL for Android
-      return _androidEmulatorUrl;
-    } else if (Platform.isIOS) {
-      // Use simulator URL for iOS
-      return _iosSimulatorUrl;
-    }
-    return _physicalDeviceUrl;
+    // Development/Debug mode - use test server for functional testing
+    // For physical device testing, use the test server
+    return _testServerUrl;
   }
 
   static String getBaseUrl() {
