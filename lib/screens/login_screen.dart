@@ -580,39 +580,19 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
 
-              // Bottom Secure Access Badge
+              // Copyright Footer
               Padding(
                 padding: const EdgeInsets.only(bottom: 24),
                 child: Opacity(
                   opacity: 0.6,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text('✅', style: TextStyle(fontSize: 18)),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text(
-                            'Secure Access',
-                            style: TextStyle(
-                              color: Color(0xFF1F2937),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                          Text(
-                            'MULTI-FACTOR AUTHENTICATED',
-                            style: TextStyle(
-                              color: Color(0xFF6B7280),
-                              fontSize: 9,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                  child: Text(
+                    '© ${DateTime.now().year} Roonaa Technologies India Private Limited',
+                    style: const TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ),
