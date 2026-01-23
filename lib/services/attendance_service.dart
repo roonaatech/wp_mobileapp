@@ -2,21 +2,32 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:intl/intl.dart';
 import '../config/app_config.dart';
 import 'activity_logger.dart';
 
+/// Creates an HTTP client that can handle self-signed SSL certificates
+http.Client _createHttpClient() {
+  final httpClient = HttpClient()
+    ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+  return IOClient(httpClient);
+}
+
 class AttendanceService with ChangeNotifier {
   final String? token;
+  late final http.Client _client;
 
-  AttendanceService({this.token});
+  AttendanceService({this.token}) {
+    _client = _createHttpClient();
+  }
 
   Future<void> applyLeave(String leaveType, DateTime startDate, DateTime endDate, String reason) async {
     final url = AppConfig.leaveApply;
     final DateFormat formatter = DateFormat('yyyy-MM-dd');
 
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -54,7 +65,7 @@ class AttendanceService with ChangeNotifier {
   Future<Map<String, dynamic>> getDashboardStats() async {
     final url = AppConfig.leaveStats;
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -77,7 +88,7 @@ class AttendanceService with ChangeNotifier {
     final url = AppConfig.leaveHistory;
     
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -100,7 +111,7 @@ class AttendanceService with ChangeNotifier {
     final url = AppConfig.leaveHistory;
     
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -122,7 +133,7 @@ class AttendanceService with ChangeNotifier {
   Future<List<dynamic>> getLeaveTypes() async {
     final url = AppConfig.leaveTypes;
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -144,7 +155,7 @@ class AttendanceService with ChangeNotifier {
   Future<List<dynamic>> getLeaveTypesForUser() async {
     final url = AppConfig.leaveTypesForUser;
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -167,7 +178,7 @@ class AttendanceService with ChangeNotifier {
   Future<Map<String, dynamic>> getUserLeaveBalance() async {
     final url = AppConfig.userBalance;
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -194,7 +205,7 @@ class AttendanceService with ChangeNotifier {
     final DateFormat formatter = DateFormat('yyyy-MM-dd');
 
     try {
-      final response = await http.put(
+      final response = await _client.put(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -226,7 +237,7 @@ class AttendanceService with ChangeNotifier {
   // Future<void> checkIn() async {
   //   final url = AppConfig.checkIn;
   //   try {
-  //     final response = await http.post(
+  //     final response = await _client.post(
   //       Uri.parse(url),
   //       headers: {
   //         'Content-Type': 'application/json',
@@ -250,7 +261,7 @@ class AttendanceService with ChangeNotifier {
   // Future<void> checkOut() async {
   //   final url = AppConfig.checkOut;
   //   try {
-  //     final response = await http.post(
+  //     final response = await _client.post(
   //       Uri.parse(url),
   //       headers: {
   //         'Content-Type': 'application/json',
@@ -274,7 +285,7 @@ class AttendanceService with ChangeNotifier {
   Future<void> startOnDuty(String clientName, String location, String purpose) async {
     final url = AppConfig.onDutyStart;
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -302,7 +313,7 @@ class AttendanceService with ChangeNotifier {
   Future<void> endOnDuty() async {
     final url = AppConfig.onDutyEnd;
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -327,7 +338,7 @@ class AttendanceService with ChangeNotifier {
   Future<Map<String, dynamic>> getActiveOnDuty() async {
     final url = AppConfig.onDutyActive;
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -348,7 +359,7 @@ class AttendanceService with ChangeNotifier {
   Future<void> updateOnDutyDetails(int id, String clientName, String location, String purpose) async {
     final url = '${AppConfig.onDutyDetail}/$id';
     try {
-      final response = await http.put(
+      final response = await _client.put(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -379,7 +390,7 @@ class AttendanceService with ChangeNotifier {
     print('🗑️ DELETE URL: $url');
     print('🗑️ DELETE ID: $id (type: ${id.runtimeType})');
     
-    final response = await http.delete(
+    final response = await _client.delete(
       url,
       headers: {
         'Content-Type': 'application/json',

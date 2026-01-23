@@ -2,9 +2,17 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 import 'activity_logger.dart';
+
+/// Creates an HTTP client that can handle self-signed SSL certificates
+http.Client _createHttpClient() {
+  final httpClient = HttpClient()
+    ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+  return IOClient(httpClient);
+}
 
 class AuthConfirmationException implements Exception {
   final String message;
@@ -55,8 +63,9 @@ class AuthService with ChangeNotifier {
   Future<void> login(String email, String password, {bool forceLocal = false}) async {
     final url = AppConfig.authSignIn;
     print('Attempting login to: $url (Force Local: $forceLocal)');
+    final client = _createHttpClient();
     try {
-      final response = await http.post(
+      final response = await client.post(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({

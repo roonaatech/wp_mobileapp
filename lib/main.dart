@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
@@ -6,18 +8,36 @@ import 'services/attendance_service.dart';
 import 'services/auth_service.dart';
 
 void main() {
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AuthService()),
-        ChangeNotifierProxyProvider<AuthService, AttendanceService>(
-          create: (_) => AttendanceService(token: null),
-          update: (context, auth, previous) => AttendanceService(token: auth.token),
-        ),
-      ],
-      child: const MyApp(),
-    ),
-  );
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    
+    // Catch Flutter framework errors
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+      if (kDebugMode) {
+        print('Flutter Error: ${details.exception}');
+        print('Stack trace: ${details.stack}');
+      }
+    };
+    
+    runApp(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthService()),
+          ChangeNotifierProxyProvider<AuthService, AttendanceService>(
+            create: (_) => AttendanceService(token: null),
+            update: (context, auth, previous) => AttendanceService(token: auth.token),
+          ),
+        ],
+        child: const MyApp(),
+      ),
+    );
+  }, (error, stackTrace) {
+    if (kDebugMode) {
+      print('Uncaught error: $error');
+      print('Stack trace: $stackTrace');
+    }
+  });
 }
 
 class MyApp extends StatelessWidget {

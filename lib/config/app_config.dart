@@ -10,9 +10,9 @@ class AppConfig {
   // For Production: https://api.roonaa.in:3343
   
   static const String _androidEmulatorUrl = 'http://10.0.2.2:3000';
-  static const String _testServerUrl = 'https://api.workpulse-uat.roonaa.in:3343';
+  static const String _testServerUrl = 'https://api.workpulse-uat.roonaa.in:3353';
   static const String _iosSimulatorUrl = 'http://localhost:3000';
-  static const String _productionUrl = 'https://api.roonaa.in:3343';
+  static const String _productionUrl = 'https://api.workpulse-uat.roonaa.in:3353';
 
   // Get the appropriate base URL based on platform and environment
   static String get apiBaseUrl {
