@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../widgets/brand_logo.dart';
 import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -417,50 +418,57 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             children: [
               Expanded(
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 40),
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 80),
-                        // Large Centered Logo (no white background)
-                        Container(
-                          width: 160,
-                          height: 160,
-                          padding: const EdgeInsets.all(8),
-                          alignment: Alignment.center,
-                          child: Image.asset(
-                            'assets/abis_icon.png',
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                        const SizedBox(height: 40),
-                        // Heading (modern/trendy)
-                        Text.rich(
-                          TextSpan(
-                            style: GoogleFonts.poppins(
-                              fontSize: 34,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF0F172A),
-                              letterSpacing: 0.2,
-                              shadows: [
-                                Shadow(
-                                  color: Colors.black.withOpacity(0.06),
-                                  offset: const Offset(0, 6),
-                                  blurRadius: 12,
-                                ),
-                              ],
-                            ),
-                            children: [
-                              const TextSpan(text: 'Sign in to '),
-                              TextSpan(
-                                text: 'WorkPulse',
-                                style: GoogleFonts.poppins(fontWeight: FontWeight.w900),
+                child: Center(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 40),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                        // Brand row similar to webapp
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            const BrandLogo(size: 80),
+                            const SizedBox(width: 12),
+                            Flexible(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  ShaderMask(
+                                    shaderCallback: (bounds) => const LinearGradient(
+                                      colors: [Color(0xFF2563EB), Color(0xFF7C3AED)],
+                                      begin: Alignment.centerLeft,
+                                      end: Alignment.centerRight,
+                                    ).createShader(Rect.fromLTWH(0, 0, bounds.width, bounds.height)),
+                                    blendMode: BlendMode.srcIn,
+                                    child: Text(
+                                      'WorkPulse',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 38,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: -1,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'MANAGEMENT',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          textAlign: TextAlign.center,
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 60),
 
@@ -575,14 +583,56 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 ),
                               ),
+                              const SizedBox(height: 24),
+                              // Information Text
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF0F4FF),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: const Color(0xFFDEE2FF), width: 1),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Login Information',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFF1F2937),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Use your ABIS username and password to login to WorkPulse.',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: const Color(0xFF6B7280),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'If you forget your password, please reset it in the ABIS application.',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: const Color(0xFF6B7280),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 40),
+                        const SizedBox(height: 20),
                       ],
                     ),
                   ),
                 ),
+              ),
               ),
 
               // Copyright Footer
