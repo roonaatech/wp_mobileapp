@@ -401,7 +401,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                       ),
                     ),
                     TableCalendar(
-                      firstDay: DateTime.now().subtract(const Duration(days: 30)),
+                      firstDay: DateTime.now(),
                       lastDay: DateTime.now().add(const Duration(days: 365)),
                       focusedDay: focusedDay,
                       selectedDayPredicate: (day) => false, // We use range selection
@@ -409,6 +409,13 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                       rangeEndDay: tempEnd,
                       calendarFormat: CalendarFormat.month,
                       rangeSelectionMode: RangeSelectionMode.toggledOn,
+                      enabledDayPredicate: (day) {
+                        // Disable past dates (before today)
+                        final today = DateTime.now();
+                        final todayOnly = DateTime(today.year, today.month, today.day);
+                        final dayOnly = DateTime(day.year, day.month, day.day);
+                        return !dayOnly.isBefore(todayOnly);
+                      },
                       headerStyle: const HeaderStyle(
                         formatButtonVisible: false,
                         titleCentered: true,

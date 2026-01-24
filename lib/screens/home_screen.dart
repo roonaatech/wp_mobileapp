@@ -243,7 +243,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
   }
 
   void _applyFilterAndYear(String? filterName, int year) {
-    _filteredLeaves = _leaves.where((item) {
+    final filtered = _leaves.where((item) {
       // First filter by year
       try {
         DateTime? date;
@@ -282,27 +282,16 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
       }
     }).toList();
     
-    // Recalculate stats for the selected year
-    _updateStatsForYear(year);
-  }
-
-  void _updateStatsForYear(int year) {
-    // Filter leaves by year
+    // Calculate stats for the selected year
     final yearLeaves = _leaves.where((item) {
       try {
-        DateTime? date;
-        if (item['type'] == 'leave') {
-          date = DateTime.tryParse(item['start'].toString());
-        } else {
-          date = DateTime.tryParse(item['start'].toString());
-        }
+        DateTime? date = DateTime.tryParse(item['start'].toString());
         return date != null && date.year == year;
       } catch (e) {
         return false;
       }
     }).toList();
 
-    // Calculate stats for this year
     int totalLeaves = 0;
     int onDutyLeaves = 0;
     int pendingLeaves = 0;
@@ -328,16 +317,16 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
       }
     }
 
-    setState(() {
-      _stats = {
-        'totalLeaves': totalLeaves,
-        'pendingLeaves': pendingLeaves,
-        'approvedLeaves': approvedLeaves,
-        'rejectedLeaves': rejectedLeaves,
-        'activeOnDuty': activeOnDuty,
-        'onDutyLeaves': onDutyLeaves
-      };
-    });
+    // Update both filtered leaves and stats together
+    _filteredLeaves = filtered;
+    _stats = {
+      'totalLeaves': totalLeaves,
+      'pendingLeaves': pendingLeaves,
+      'approvedLeaves': approvedLeaves,
+      'rejectedLeaves': rejectedLeaves,
+      'activeOnDuty': activeOnDuty,
+      'onDutyLeaves': onDutyLeaves
+    };
   }
 
   List<dynamic> _getUpcomingLeaves() {
@@ -407,13 +396,8 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
     return GestureDetector(
       onTap: () {
         setState(() {
-          if (_selectedFilter == label) {
-            _selectedFilter = null;
-            _applyFilterAndYear(null, _selectedYear);
-          } else {
-            _selectedFilter = label;
-            _applyFilterAndYear(label, _selectedYear);
-          }
+          _selectedFilter = label;
+          _applyFilterAndYear(label, _selectedYear);
         });
       },
       child: Container(
@@ -448,7 +432,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
     );
   }
 
-  Future<void> _deleteRequest(int id) async {
+  Future<void> _deleteRequest(int id, {bool isOnDuty = false}) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -469,15 +453,14 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
 
     if (confirmed == true) {
       try {
-        print('Attempting to delete request with ID: $id (type: ${id.runtimeType})');
         final service = Provider.of<AttendanceService>(context, listen: false);
-        await service.deleteLeaveOrOnDuty(id);
+        await service.deleteLeaveOrOnDuty(id, isOnDuty: isOnDuty);
         
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Request deleted successfully!')),
         );
         
-        _loadLeaves(); // Refresh the list
+        _loadLeaves();
       } catch (error) {
         showErrorDialog(context, 'Failed to delete request: $error');
       }
@@ -1512,9 +1495,10 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                               } else {
                                 id = int.parse(item['id'].toString().trim());
                               }
-                              context.findAncestorStateOfType<_LeaveDashboardState>()?._deleteRequest(id);
+                              final itemType = item['type']?.toString() ?? '';
+                              final isOnDuty = itemType == 'on-duty' || itemType == 'on_duty';
+                              _deleteRequest(id, isOnDuty: isOnDuty);
                             } catch (e) {
-                              print('Error parsing ID: $e, item: ${item['id']}');
                               showErrorDialog(context, 'Error: Invalid request ID format');
                             }
                           },

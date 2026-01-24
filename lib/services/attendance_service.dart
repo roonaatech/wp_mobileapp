@@ -415,35 +415,60 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
-  Future<void> deleteLeaveOrOnDuty(int id) async {
-    if (token == null) throw Exception('Not authenticated');
+  Future<void> testNetworkConnection() async {
+    print('\n🧪 ========== NETWORK TEST STARTED ==========');
+    try {
+      final testUrl = Uri.parse('${AppConfig.getBaseUrl()}/leave/test-connection');
+      print('🧪 Testing connection to: $testUrl');
+      
+      final response = await _client.get(
+        testUrl,
+        headers: {'x-access-token': token ?? 'no-token'},
+      ).timeout(const Duration(seconds: 10));
+      
+      print('🧪 Test request completed with status: ${response.statusCode}');
+      print('🧪 Test response body: ${response.body}');
+    } catch (e) {
+      print('🧪 Test request failed: $e');
+    }
+    print('🧪 ========== NETWORK TEST ENDED ==========\n');
+  }
+
+  Future<void> deleteLeaveOrOnDuty(int id, {bool isOnDuty = false}) async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
 
     final baseUrl = AppConfig.getBaseUrl();
-    final url = Uri.parse('$baseUrl/leave/$id');
+    final endpoint = isOnDuty ? 'onduty' : 'leave';
+    final url = Uri.parse('$baseUrl/$endpoint/$id');
     
-    print('🗑️ DELETE URL: $url');
-    print('🗑️ DELETE ID: $id (type: ${id.runtimeType})');
-    
-    final response = await _client.delete(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'x-access-token': token!,
-      },
-    );
+    try {
+      final response = await _client.delete(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('DELETE request timeout');
+        }
+      );
 
-    print('🗑️ DELETE Response Status: ${response.statusCode}');
-    print('🗑️ DELETE Response Body: ${response.body}');
-
-    if (response.statusCode != 200) {
-      try {
-        final responseData = json.decode(response.body);
-        throw Exception(responseData['message'] ?? 'Failed to delete request.');
-      } catch (e) {
-        throw Exception('Failed to delete request. Status: ${response.statusCode}');
+      if (response.statusCode != 200) {
+        try {
+          final responseData = json.decode(response.body);
+          throw Exception(responseData['message'] ?? 'Failed to delete request.');
+        } catch (e) {
+          throw Exception('Failed to delete request. Status: ${response.statusCode}');
+        }
       }
+      
+      notifyListeners();
+    } catch (error) {
+      rethrow;
     }
-    
-    notifyListeners();
   }
 }
