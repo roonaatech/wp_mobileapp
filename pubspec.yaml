@@ -27,7 +27,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/abis_icon.png
+    - assets/
 
 flutter_launcher_icons:             # <-- add this block at the bottom
   android: true

@@ -30,6 +30,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   Map<String, dynamic> _userLeaveBalance = {};
   int? _selectedLeaveBalance = 0;
   Map<DateTime, String> _existingLeavesStatus = {};
+  bool _hasLoadedData = false;
 
   // Calculate leave days excluding Sundays (Sunday = 0 in Dart)
   int _calculateLeaveDays(DateTime startDate, DateTime endDate) {
@@ -50,12 +51,31 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => _fetchLeaveTypes());
-    Future.microtask(() => _fetchUserLeaveBalance());
-    Future.microtask(() => _fetchMyLeaves());
     if (widget.existingLeave != null) {
       _initializeForEdit();
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Always fetch fresh data from database when screen appears
+    if (!_hasLoadedData) {
+      print('[ApplyLeave] Loading fresh data from database...');
+      _loadAllData();
+      _hasLoadedData = true;
+    }
+  }
+
+  // Method to load all data from database
+  Future<void> _loadAllData() async {
+    print('[ApplyLeave] Fetching leave types, balance, and existing leaves...');
+    await Future.wait([
+      _fetchLeaveTypes(),
+      _fetchUserLeaveBalance(),
+      _fetchMyLeaves(),
+    ]);
+    print('[ApplyLeave] Data loaded. Leave types count: ${_leaveTypes.length}');
   }
 
   Future<void> _fetchMyLeaves() async {
@@ -132,7 +152,12 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
 
   Future<void> _fetchLeaveTypes() async {
     try {
+      print('[ApplyLeave] Calling API to get leave types...');
       final types = await Provider.of<AttendanceService>(context, listen: false).getLeaveTypesForUser();
+      print('[ApplyLeave] Received ${types.length} leave types from API');
+      if (types.isNotEmpty) {
+        print('[ApplyLeave] First leave type: ${types[0]}');
+      }
       if (mounted) {
         setState(() {
           _leaveTypes = types;
@@ -140,6 +165,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
         });
       }
     } catch (e) {
+      print('[ApplyLeave] Error fetching leave types: $e');
       if (mounted) {
         setState(() => _fetchingTypes = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -210,39 +236,40 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                 },
                  validator: (value) => value == null ? 'Please select a leave type' : null,
               ),
-              if (_leaveType != null && _selectedLeaveBalance != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF8E1),
-                      border: Border.all(color: const Color(0xFFFBC02D)),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Balance Available:',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF666666),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        Text(
-                          '$_selectedLeaveBalance day(s)',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFFF57F17),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              // Balance Available display disabled
+              // if (_leaveType != null && _selectedLeaveBalance != null)
+              //   Padding(
+              //     padding: const EdgeInsets.only(top: 8.0),
+              //     child: Container(
+              //       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              //       decoration: BoxDecoration(
+              //         color: const Color(0xFFFFF8E1),
+              //         border: Border.all(color: const Color(0xFFFBC02D)),
+              //         borderRadius: BorderRadius.circular(4),
+              //       ),
+              //       child: Row(
+              //         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              //         children: [
+              //           Text(
+              //             'Balance Available:',
+              //             style: const TextStyle(
+              //               fontSize: 11,
+              //               color: Color(0xFF666666),
+              //               fontWeight: FontWeight.w500,
+              //             ),
+              //           ),
+              //           Text(
+              //             '$_selectedLeaveBalance day(s)',
+              //             style: const TextStyle(
+              //               fontSize: 13,
+              //               color: Color(0xFFF57F17),
+              //               fontWeight: FontWeight.bold,
+              //             ),
+              //           ),
+              //         ],
+              //       ),
+              //     ),
+              //   ),
               const SizedBox(height: 16),
               InkWell(
                 onTap: _selectDateRange,
@@ -275,17 +302,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              if (_selectedLeaveAllowedDays != null && _selectedLeaveAllowedDays! > 0)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 6.0),
-                                  child: Text(
-                                    'Allowed: $_selectedLeaveAllowedDays day(s)',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF666666),
-                                    ),
-                                  ),
-                                ),
+                              // Removed "Allowed: xx days" display
                               if (_selectedLeaveAllowedDays != null && _calculateLeaveDays(_startDate!, _endDate!) > _selectedLeaveAllowedDays! && !(_leaveType?.toLowerCase().contains('loss of pay') ?? false))
                                 Padding(
                                   padding: const EdgeInsets.only(top: 8.0),
@@ -297,7 +314,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
-                                      '⚠️ Selected days (${_calculateLeaveDays(_startDate!, _endDate!)}) exceed allowed limit ($_selectedLeaveAllowedDays days). Please reduce the date range.',
+                                      '⚠️ Your leave request exceeds the available balance. Please contact your manager to discuss this leave request.',
                                       style: const TextStyle(
                                         fontSize: 11,
                                         color: Color(0xFFC1272D),
@@ -593,7 +610,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
       return;
     }
     if (_isExceedingLimit()) {
-      showErrorDialog(context, 'Cannot submit: Selected days (${_calculateLeaveDays(_startDate!, _endDate!)}) exceed allowed limit ($_selectedLeaveAllowedDays days)');
+      showErrorDialog(context, 'Your leave request exceeds the available balance. Please contact your manager to discuss this leave request.');
       return;
     }
 
