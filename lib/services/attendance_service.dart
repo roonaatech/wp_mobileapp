@@ -439,9 +439,11 @@ class AttendanceService with ChangeNotifier {
       throw Exception('Not authenticated');
     }
 
-    final baseUrl = AppConfig.getBaseUrl();
-    final endpoint = isOnDuty ? 'onduty' : 'leave';
-    final url = Uri.parse('$baseUrl/$endpoint/$id');
+    // Use the same URL pattern as updateLeave and updateOnDuty
+    final urlString = isOnDuty 
+        ? '${AppConfig.onDutyDetail}/$id'
+        : '${AppConfig.leaveDetail}/$id';
+    final url = Uri.parse(urlString);
     
     try {
       final response = await _client.delete(

@@ -51,10 +51,15 @@ class AppConfig {
   }
 
   static String getBaseUrl() {
-    // For Production: https://api.roonaa.in:3343
-    // Use your computer's IP for physical device testing.
-    const String devIp = '10.2.1.113'; // Example: '192.168.1.5'
-
+    // Check if running in release mode
+    const bool isReleaseMode = bool.fromEnvironment('dart.vm.product');
+    
+    if (isReleaseMode) {
+      // Production/Release build - use deployed server
+      return '$_productionUrl/api';
+    }
+    
+    // Debug mode - use emulator/simulator addresses
     if (Platform.isAndroid) {
       // Android emulator uses a special address to access the host machine
       return 'http://10.0.2.2:3000/api';
