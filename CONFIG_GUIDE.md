@@ -5,49 +5,52 @@ All backend API URLs are now centralized in a single configuration file: `/lib/c
 
 This means you only need to change the backend URL in **ONE place** instead of multiple service files.
 
-## How to Change Backend URL
+## Quick Start
+
+### For Local Development (flutter run)
+```bash
+flutter run
+```
+**Default:** Automatically connects to `localhost:3000`
+- Android emulator: Uses `http://10.0.2.2:3000`
+- iOS simulator: Uses `http://localhost:3000`
+
+### For Building APK with Test Server
+```bash
+flutter build apk --debug --dart-define=USE_LOCALHOST=false
+```
+**Uses:** Test server `https://api.workpulse-uat.roonaa.in:3353`
+
+### For Production Release
+```bash
+flutter build apk --release
+```
+**Uses:** Production server `https://api.workpulse-uat.roonaa.in:3353`
+
+## How It Works
+
+The app automatically selects the correct API endpoint based on:
+1. **Build mode** (debug vs release)
+2. **Platform** (Android emulator, iOS simulator, or physical device)
+3. **Environment variable** `USE_LOCALHOST` (defaults to `true` for `flutter run`)
+
+## URL Configuration
 
 ### Step 1: Open the Config File
 ```
 /mobile_app/lib/config/app_config.dart
 ```
 
-### Step 2: Update the URL for Your Environment
-
-In the `AppConfig` class, you'll find these URL constants:
+### Step 2: Available URL Constants
 
 ```dart
-static const String _androidEmulatorUrl = 'http://10.0.2.2:3000';    // Android Emulator
-static const String _physicalDeviceUrl = 'http://10.2.1.113:3000';   // Physical Device
-static const String _iosSimulatorUrl = 'http://localhost:3000';      // iOS Simulator
-static const String _productionUrl = 'https://your_production_domain.com'; // Production
+static const String _androidEmulatorUrl = 'http://10.0.2.2:3000';           // Android Emulator
+static const String _iosSimulatorUrl = 'http://localhost:3000';             // iOS Simulator
+static const String _testServerUrl = 'https://api.workpulse-uat.roonaa.in:3353';  // Test/UAT Server
+static const String _productionUrl = 'https://api.workpulse-uat.roonaa.in:3353';  // Production Server
 ```
 
-### Step 3: Choose Your Environment
-
-**For Android Emulator (Default):**
-```dart
-static const String _androidEmulatorUrl = 'http://10.0.2.2:3000';
-```
-
-**For Physical Android Device:**
-```dart
-static const String _physicalDeviceUrl = 'http://192.168.1.100:3000'; // Your computer's LAN IP
-```
-
-**For iOS Simulator:**
-```dart
-static const String _iosSimulatorUrl = 'http://localhost:3000';
-```
-
-**For Production (HTTPS):**
-```dart
-static const String _productionUrl = 'https://your_domain.com:3000';
-// or if using standard HTTPS port:
-static const String _productionUrl = 'https://your_domain.com';
-```
-
-## Environment Setup
+## Environment Setup Details
 
 ### Android Emulator
 ```dart
@@ -55,6 +58,7 @@ static const String _androidEmulatorUrl = 'http://10.0.2.2:3000';
 ```
 - Uses special IP `10.0.2.2` that Android emulator uses to reach host localhost
 - Works with backend running on your machine
+- Automatically used when running `flutter run` on Android emulator
 
 ### iOS Simulator
 ```dart
@@ -62,24 +66,43 @@ static const String _iosSimulatorUrl = 'http://localhost:3000';
 ```
 - Uses `localhost` directly
 - Works with backend running on your machine
+- Automatically used when running `flutter run` on iOS simulator
 
-### Physical Device (Same Network)
+### Test Server (UAT)
 ```dart
-static const String _physicalDeviceUrl = 'http://192.168.1.100:3000';
+static const String _testServerUrl = 'https://api.workpulse-uat.roonaa.in:3353';
 ```
-- Replace `192.168.1.100` with your computer's actual LAN IP
-- Find your LAN IP on macOS: 
-  ```bash
-  ifconfig | grep "inet " | grep -v "127.0.0.1"
-  ```
+- Used for building debug APK for testing on physical devices
+- Command: `flutter build apk --debug --dart-define=USE_LOCALHOST=false`
 
 ### Production Server
 ```dart
-static const String _productionUrl = 'https://your_domain.com:3000';
+static const String _productionUrl = 'https://api.workpulse-uat.roonaa.in:3353';
 ```
-- Update with your actual domain
+- Used for release builds
+- Command: `flutter build apk --release`
 - Should use HTTPS (SSL/TLS)
-- If backend runs on standard port 443, omit `:3000`
+
+## Advanced Usage
+
+### Force Test Server During Development
+If you want to test against the remote server while developing:
+```bash
+flutter run --dart-define=USE_LOCALHOST=false
+```
+
+### Custom Configuration for Physical Device
+To test on a physical device with your local backend, update the URL:
+```dart
+static const String _physicalDeviceUrl = 'http://192.168.1.100:3000'; // Your computer's LAN IP
+```
+
+Find your LAN IP on macOS:
+```bash
+ifconfig | grep "inet " | grep -v "127.0.0.1"
+```
+
+Then modify the config logic to use this URL when `USE_LOCALHOST=true` but not on emulator.
 
 ## Using the Configuration
 
@@ -140,18 +163,35 @@ Both services now import and use `AppConfig` instead of having their own hardcod
 
 ## Quick Reference
 
-| Environment | URL | Use Case |
-|-------------|-----|----------|
-| Android Emulator | `http://10.0.2.2:3000` | Local development on Android emulator |
-| iOS Simulator | `http://localhost:3000` | Local development on iOS simulator |
-| Physical Device | `http://YOUR_LAN_IP:3000` | Testing on actual phone on same network |
-| Production | `https://your_domain.com` | Live deployment |
+| Command | API Endpoint | Use Case |
+|---------|--------------|----------|
+| `flutter run` | `http://10.0.2.2:3000` (Android)<br>`http://localhost:3000` (iOS) | Local development with backend on your machine |
+| `flutter run --dart-define=USE_LOCALHOST=false` | `https://api.workpulse-uat.roonaa.in:3353` | Test against remote server during development |
+| `flutter build apk --debug --dart-define=USE_LOCALHOST=false` | `https://api.workpulse-uat.roonaa.in:3353` | Build debug APK for testing on physical devices |
+| `flutter build apk --release` | `https://api.workpulse-uat.roonaa.in:3353` | Build production release APK |
+
+## Configuration Logic
+
+The `apiBaseUrl` getter uses this decision tree:
+
+```
+Is Release Mode?
+├── Yes → Use Production URL
+└── No (Debug Mode)
+    └── USE_LOCALHOST flag set?
+        ├── true (default for flutter run)
+        │   ├── Android → http://10.0.2.2:3000
+        │   └── iOS → http://localhost:3000
+        └── false (for APK builds)
+            └── Use Test Server URL
+```
 
 ## Benefits of This Setup
 
 ✅ **Single Point of Change** - Update URL in one file  
 ✅ **No Hardcoding** - All URLs managed centrally  
-✅ **Easy Switching** - Change between environments quickly  
+✅ **Automatic Selection** - Right endpoint based on build mode and platform  
+✅ **Easy Switching** - Use `--dart-define` flag to override defaults  
 ✅ **Type Safe** - Static constants prevent typos  
 ✅ **Maintainable** - Clear, documented endpoints  
 ✅ **Scalable** - Easy to add new endpoints  
@@ -159,25 +199,38 @@ Both services now import and use `AppConfig` instead of having their own hardcod
 ## Troubleshooting
 
 **Issue:** Connection refused on emulator
-- **Solution:** Check backend is running, verify port 3000 is open
+- **Solution:** Check backend is running on port 3000, verify `npm start` in backend directory
+
+**Issue:** Still connecting to test server when running `flutter run`
+- **Solution:** Hot restart the app (press `R` in terminal) or kill and restart `flutter run`
 
 **Issue:** Connection refused on iOS
 - **Solution:** Use `localhost` instead of `127.0.0.1`, backend must be on same machine
 
-**Issue:** Connection refused on physical device
-- **Solution:** Find correct LAN IP (`ifconfig`), ensure phone is on same WiFi network
+**Issue:** Need to test on physical device with local backend
+- **Solution:** Find your computer's LAN IP and update `_androidEmulatorUrl` or `_iosSimulatorUrl` temporarily
 
 **Issue:** SSL certificate errors
 - **Solution:** Use HTTPS URL with proper SSL certificate on production
 
-## Next Steps
+**Issue:** "Force Local" option in login not working
+- **Solution:** This is a backend feature, not related to API URL configuration
 
-After updating the backend URL in `AppConfig`:
+## Testing Your Configuration
 
-1. Hot reload/restart the Flutter app
-2. Test authentication (login page)
-3. Verify API calls work in console logs
-4. Check network tab in browser dev tools
+After updating or changing the configuration:
+
+1. **Stop the app** completely (don't just hot reload)
+2. **Run again:**
+   ```bash
+   flutter run
+   ```
+3. **Check the console logs** - You should see:
+   ```
+   Attempting login to: http://10.0.2.2:3000/api/auth/signin (Force Local: false)
+   ```
+4. **Verify the URL** matches your expectation
+5. Test login to confirm backend connectivity
 
 ---
 
