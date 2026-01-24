@@ -47,7 +47,41 @@ class AttendanceService with ChangeNotifier {
       }
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('Failed to apply leave: ${response.statusCode} - ${response.body}');
+        String userMessage = 'Failed to apply leave';
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map) {
+            if (decoded.containsKey('message')) {
+              userMessage = decoded['message'].toString();
+            } else if (decoded.containsKey('errors')) {
+              final errors = decoded['errors'];
+              if (errors is String) {
+                userMessage = errors;
+              } else if (errors is List) {
+                userMessage = errors.map((e) => e.toString()).join('; ');
+              } else if (errors is Map) {
+                userMessage = errors.values.map((v) => v.toString()).join('; ');
+              } else {
+                userMessage = decoded.toString();
+              }
+            } else {
+              // Fallback to a compact string representation
+              userMessage = decoded.values.map((v) => v.toString()).join('; ');
+            }
+          } else if (decoded is String) {
+            userMessage = decoded;
+          }
+        } catch (_) {
+          // If body is not JSON or parsing fails, use the raw body but trim it
+          userMessage = response.body.toString();
+        }
+
+        // Ensure message is not empty
+        if (userMessage.trim().isEmpty) {
+          userMessage = 'Failed to apply leave (status ${response.statusCode})';
+        }
+
+        throw Exception(userMessage);
       }
       
       await ActivityLogger.logLeaveCreated(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/attendance_service.dart';
 import '../utils/ist_helper.dart';
+import '../utils/dialogs.dart';
 
 class AttendanceHistoryScreen extends StatefulWidget {
   final String title;
@@ -43,9 +44,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       });
     } catch (error) {
       print('Error loading history: $error');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load history: $error')),
-      );
+      showErrorDialog(context, 'Failed to load history: $error');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -129,9 +128,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       
       _loadHistory();
     } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to complete on-duty: $error')),
-      );
+      showErrorDialog(context, 'Failed to complete on-duty: $error');
       setState(() => _processingItemId = null);
     }
   }
@@ -167,9 +164,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
         
         _loadHistory();
       } catch (error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete request: $error')),
-        );
+        showErrorDialog(context, 'Failed to delete request: $error');
       } finally {
         if (mounted) {
           setState(() => _processingItemId = null);

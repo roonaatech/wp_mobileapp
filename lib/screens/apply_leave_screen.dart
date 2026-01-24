@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../services/attendance_service.dart';
+import '../utils/dialogs.dart';
 
 class ApplyLeaveScreen extends StatefulWidget {
   final VoidCallback? onSuccess;
@@ -581,20 +582,11 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   Future<void> _submitLeave() async {
     if (!_formKey.currentState!.validate()) return;
     if (_startDate == null || _endDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select dates')),
-      );
+      showErrorDialog(context, 'Please select dates');
       return;
     }
     if (_isExceedingLimit()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Cannot submit: Selected days (${_calculateLeaveDays(_startDate!, _endDate!)}) exceed allowed limit ($_selectedLeaveAllowedDays days)',
-          ),
-          backgroundColor: const Color(0xFFC1272D),
-        ),
-      );
+      showErrorDialog(context, 'Cannot submit: Selected days (${_calculateLeaveDays(_startDate!, _endDate!)}) exceed allowed limit ($_selectedLeaveAllowedDays days)');
       return;
     }
 
@@ -638,9 +630,9 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        var msg = e.toString();
+        msg = msg.replaceFirst(RegExp(r'^Exception:\s*'), '');
+        showErrorDialog(context, msg);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

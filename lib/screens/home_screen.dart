@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/attendance_service.dart';
+import '../utils/dialogs.dart';
 import 'apply_leave_screen.dart';
 import 'on_duty_screen.dart';
 
@@ -478,9 +479,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
         
         _loadLeaves(); // Refresh the list
       } catch (error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete request: $error')),
-        );
+        showErrorDialog(context, 'Failed to delete request: $error');
       }
     }
   }
@@ -1516,9 +1515,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                               context.findAncestorStateOfType<_LeaveDashboardState>()?._deleteRequest(id);
                             } catch (e) {
                               print('Error parsing ID: $e, item: ${item['id']}');
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Error: Invalid request ID format')),
-                                );
+                              showErrorDialog(context, 'Error: Invalid request ID format');
                             }
                           },
                           tooltip: 'Delete',
