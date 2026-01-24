@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -423,39 +424,43 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       children: [
                         const SizedBox(height: 80),
-                        // Large Centered Logo
+                        // Large Centered Logo (no white background)
                         Container(
-                          width: 100,
-                          height: 100,
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF3B82F6).withOpacity(0.1),
-                                blurRadius: 20,
-                                spreadRadius: 5,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
+                          width: 160,
+                          height: 160,
+                          padding: const EdgeInsets.all(8),
+                          alignment: Alignment.center,
                           child: Image.asset(
                             'assets/abis_icon.png',
                             fit: BoxFit.contain,
                           ),
                         ),
                         const SizedBox(height: 40),
-                        // Heading
-                        const Text(
-                          'Sign in to WorkPulse',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF1F2937),
-                            letterSpacing: -0.5,
+                        // Heading (modern/trendy)
+                        Text.rich(
+                          TextSpan(
+                            style: GoogleFonts.poppins(
+                              fontSize: 34,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0F172A),
+                              letterSpacing: 0.2,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black.withOpacity(0.06),
+                                  offset: const Offset(0, 6),
+                                  blurRadius: 12,
+                                ),
+                              ],
+                            ),
+                            children: [
+                              const TextSpan(text: 'Sign in to '),
+                              TextSpan(
+                                text: 'WorkPulse',
+                                style: GoogleFonts.poppins(fontWeight: FontWeight.w900),
+                              ),
+                            ],
                           ),
+                          textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 60),
 
