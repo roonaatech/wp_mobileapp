@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/attendance_service.dart';
 import '../utils/ist_helper.dart';
+import '../utils/dialogs.dart';
 
 class OnDutyScreen extends StatefulWidget {
   final VoidCallback? onVisitEnded;
@@ -114,9 +115,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
       }
     } catch (error) {
        if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update: $error')),
-        );
+         showErrorDialog(context, 'Failed to update: $error');
        }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -160,9 +159,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
         const SnackBar(content: Text('On-Duty Started!')),
       );
     } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to start: $error')),
-      );
+      showErrorDialog(context, 'Failed to start: $error');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -183,9 +180,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
       // Notify parent to switch tab or refresh
       widget.onVisitEnded?.call();
     } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to end: $error')),
-      );
+      showErrorDialog(context, 'Failed to end: $error');
     } finally {
       setState(() => _isLoading = false);
     }

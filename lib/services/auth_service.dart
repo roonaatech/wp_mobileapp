@@ -2,9 +2,31 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 import 'activity_logger.dart';
+
+/// Creates an HTTP client that can handle self-signed SSL certificates
+http.Client _createHttpClient() {
+  final httpClient = HttpClient()
+    ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+  return IOClient(httpClient);
+}
+
+class AuthConfirmationException implements Exception {
+  final String message;
+  AuthConfirmationException(this.message);
+  @override
+  String toString() => message;
+}
+
+class AuthSetupRequiredException implements Exception {
+  final String message;
+  AuthSetupRequiredException(this.message);
+  @override
+  String toString() => message;
+}
 
 class AuthService with ChangeNotifier {
   String? _token;
@@ -38,22 +60,44 @@ class AuthService with ChangeNotifier {
     return null; // Using AppConfig instead
   }
 
-  Future<void> login(String email, String password) async {
+  Future<void> login(String email, String password, {bool forceLocal = false}) async {
     final url = AppConfig.authSignIn;
-    print('Attempting login to: $url');
+    print('Attempting login to: $url (Force Local: $forceLocal)');
+    final client = _createHttpClient();
     try {
-      final response = await http.post(
+      final response = await client.post(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'email': email,
           'password': password,
+          'forceLocal': forceLocal,
         }),
       );
 
       final responseData = json.decode(response.body);
+      
+      // Handle Confirmation Request from Backend
+      if (response.statusCode == 200 && responseData['requiresConfirmation'] == true) {
+        throw AuthConfirmationException(responseData['message'] ?? 'External authentication unavailable.');
+      }
+
       if (response.statusCode != 200) {
         throw Exception(responseData['message']);
+      }
+
+      // Check for Setup Required (Role or Gender missing)
+      final role = responseData['role'];
+      final gender = responseData['gender'];
+
+      // Helper to check if role/gender is invalid
+      // Role: null or 0 means invalid
+      // Gender: null or empty string means invalid
+      final isRoleInvalid = role == null || role == 0 || role == '0';
+      final isGenderInvalid = gender == null || gender == '';
+
+      if (isRoleInvalid || isGenderInvalid) {
+         throw AuthSetupRequiredException("Setup Required");
       }
 
       _token = responseData['accessToken'];

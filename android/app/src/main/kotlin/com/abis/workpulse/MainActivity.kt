@@ -1,4 +1,4 @@
-package com.example.attendance_app
+package com.abis.workpulse
 
 import io.flutter.embedding.android.FlutterActivity
 

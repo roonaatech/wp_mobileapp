@@ -2,21 +2,33 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:intl/intl.dart';
+import 'package:geolocator/geolocator.dart';
 import '../config/app_config.dart';
 import 'activity_logger.dart';
 
+/// Creates an HTTP client that can handle self-signed SSL certificates
+http.Client _createHttpClient() {
+  final httpClient = HttpClient()
+    ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+  return IOClient(httpClient);
+}
+
 class AttendanceService with ChangeNotifier {
   final String? token;
+  late final http.Client _client;
 
-  AttendanceService({this.token});
+  AttendanceService({this.token}) {
+    _client = _createHttpClient();
+  }
 
   Future<void> applyLeave(String leaveType, DateTime startDate, DateTime endDate, String reason) async {
     final url = AppConfig.leaveApply;
     final DateFormat formatter = DateFormat('yyyy-MM-dd');
 
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -36,7 +48,41 @@ class AttendanceService with ChangeNotifier {
       }
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('Failed to apply leave: ${response.statusCode} - ${response.body}');
+        String userMessage = 'Failed to apply leave';
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map) {
+            if (decoded.containsKey('message')) {
+              userMessage = decoded['message'].toString();
+            } else if (decoded.containsKey('errors')) {
+              final errors = decoded['errors'];
+              if (errors is String) {
+                userMessage = errors;
+              } else if (errors is List) {
+                userMessage = errors.map((e) => e.toString()).join('; ');
+              } else if (errors is Map) {
+                userMessage = errors.values.map((v) => v.toString()).join('; ');
+              } else {
+                userMessage = decoded.toString();
+              }
+            } else {
+              // Fallback to a compact string representation
+              userMessage = decoded.values.map((v) => v.toString()).join('; ');
+            }
+          } else if (decoded is String) {
+            userMessage = decoded;
+          }
+        } catch (_) {
+          // If body is not JSON or parsing fails, use the raw body but trim it
+          userMessage = response.body.toString();
+        }
+
+        // Ensure message is not empty
+        if (userMessage.trim().isEmpty) {
+          userMessage = 'Failed to apply leave (status ${response.statusCode})';
+        }
+
+        throw Exception(userMessage);
       }
       
       await ActivityLogger.logLeaveCreated(
@@ -54,7 +100,7 @@ class AttendanceService with ChangeNotifier {
   Future<Map<String, dynamic>> getDashboardStats() async {
     final url = AppConfig.leaveStats;
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -77,7 +123,7 @@ class AttendanceService with ChangeNotifier {
     final url = AppConfig.leaveHistory;
     
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -100,7 +146,7 @@ class AttendanceService with ChangeNotifier {
     final url = AppConfig.leaveHistory;
     
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -122,7 +168,7 @@ class AttendanceService with ChangeNotifier {
   Future<List<dynamic>> getLeaveTypes() async {
     final url = AppConfig.leaveTypes;
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -144,7 +190,7 @@ class AttendanceService with ChangeNotifier {
   Future<List<dynamic>> getLeaveTypesForUser() async {
     final url = AppConfig.leaveTypesForUser;
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -167,7 +213,7 @@ class AttendanceService with ChangeNotifier {
   Future<Map<String, dynamic>> getUserLeaveBalance() async {
     final url = AppConfig.userBalance;
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -194,7 +240,7 @@ class AttendanceService with ChangeNotifier {
     final DateFormat formatter = DateFormat('yyyy-MM-dd');
 
     try {
-      final response = await http.put(
+      final response = await _client.put(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -226,7 +272,7 @@ class AttendanceService with ChangeNotifier {
   // Future<void> checkIn() async {
   //   final url = AppConfig.checkIn;
   //   try {
-  //     final response = await http.post(
+  //     final response = await _client.post(
   //       Uri.parse(url),
   //       headers: {
   //         'Content-Type': 'application/json',
@@ -250,7 +296,7 @@ class AttendanceService with ChangeNotifier {
   // Future<void> checkOut() async {
   //   final url = AppConfig.checkOut;
   //   try {
-  //     final response = await http.post(
+  //     final response = await _client.post(
   //       Uri.parse(url),
   //       headers: {
   //         'Content-Type': 'application/json',
@@ -274,7 +320,32 @@ class AttendanceService with ChangeNotifier {
   Future<void> startOnDuty(String clientName, String location, String purpose) async {
     final url = AppConfig.onDutyStart;
     try {
-      final response = await http.post(
+      // Get current location
+      Position? position;
+      try {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+          print('Location services are disabled.');
+        }
+        
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        
+        if (permission == LocationPermission.deniedForever || permission == LocationPermission.denied) {
+          print('Location permissions are denied.');
+        } else {
+          position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+            timeLimit: const Duration(seconds: 10),
+          );
+        }
+      } catch (e) {
+        print('Error getting location: $e');
+      }
+
+      final response = await _client.post(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -284,8 +355,8 @@ class AttendanceService with ChangeNotifier {
           'client_name': clientName,
           'location': location,
           'purpose': purpose,
-          'latitude': '0.0',
-          'longitude': '0.0',
+          'latitude': position?.latitude.toString() ?? '0.0',
+          'longitude': position?.longitude.toString() ?? '0.0',
         }),
       );
 
@@ -302,15 +373,40 @@ class AttendanceService with ChangeNotifier {
   Future<void> endOnDuty() async {
     final url = AppConfig.onDutyEnd;
     try {
-      final response = await http.post(
+      // Get current location
+      Position? position;
+      try {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+          print('Location services are disabled.');
+        }
+        
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        
+        if (permission == LocationPermission.deniedForever || permission == LocationPermission.denied) {
+          print('Location permissions are denied.');
+        } else {
+          position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+            timeLimit: const Duration(seconds: 10),
+          );
+        }
+      } catch (e) {
+        print('Error getting location: $e');
+      }
+
+      final response = await _client.post(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
           'x-access-token': token!,
         },
         body: json.encode({
-          'latitude': '0.0',
-          'longitude': '0.0',
+          'latitude': position?.latitude.toString() ?? '0.0',
+          'longitude': position?.longitude.toString() ?? '0.0',
         }),
       );
 
@@ -327,7 +423,7 @@ class AttendanceService with ChangeNotifier {
   Future<Map<String, dynamic>> getActiveOnDuty() async {
     final url = AppConfig.onDutyActive;
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -348,7 +444,7 @@ class AttendanceService with ChangeNotifier {
   Future<void> updateOnDutyDetails(int id, String clientName, String location, String purpose) async {
     final url = '${AppConfig.onDutyDetail}/$id';
     try {
-      final response = await http.put(
+      final response = await _client.put(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -370,35 +466,62 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
-  Future<void> deleteLeaveOrOnDuty(int id) async {
-    if (token == null) throw Exception('Not authenticated');
-
-    final baseUrl = AppConfig.getBaseUrl();
-    final url = Uri.parse('$baseUrl/leave/$id');
-    
-    print('🗑️ DELETE URL: $url');
-    print('🗑️ DELETE ID: $id (type: ${id.runtimeType})');
-    
-    final response = await http.delete(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'x-access-token': token!,
-      },
-    );
-
-    print('🗑️ DELETE Response Status: ${response.statusCode}');
-    print('🗑️ DELETE Response Body: ${response.body}');
-
-    if (response.statusCode != 200) {
-      try {
-        final responseData = json.decode(response.body);
-        throw Exception(responseData['message'] ?? 'Failed to delete request.');
-      } catch (e) {
-        throw Exception('Failed to delete request. Status: ${response.statusCode}');
-      }
+  Future<void> testNetworkConnection() async {
+    print('\n🧪 ========== NETWORK TEST STARTED ==========');
+    try {
+      final testUrl = Uri.parse('${AppConfig.getBaseUrl()}/leave/test-connection');
+      print('🧪 Testing connection to: $testUrl');
+      
+      final response = await _client.get(
+        testUrl,
+        headers: {'x-access-token': token ?? 'no-token'},
+      ).timeout(const Duration(seconds: 10));
+      
+      print('🧪 Test request completed with status: ${response.statusCode}');
+      print('🧪 Test response body: ${response.body}');
+    } catch (e) {
+      print('🧪 Test request failed: $e');
     }
+    print('🧪 ========== NETWORK TEST ENDED ==========\n');
+  }
+
+  Future<void> deleteLeaveOrOnDuty(int id, {bool isOnDuty = false}) async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+
+    // Use the same URL pattern as updateLeave and updateOnDuty
+    final urlString = isOnDuty 
+        ? '${AppConfig.onDutyDetail}/$id'
+        : '${AppConfig.leaveDetail}/$id';
+    final url = Uri.parse(urlString);
     
-    notifyListeners();
+    try {
+      final response = await _client.delete(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('DELETE request timeout');
+        }
+      );
+
+      if (response.statusCode != 200) {
+        try {
+          final responseData = json.decode(response.body);
+          throw Exception(responseData['message'] ?? 'Failed to delete request.');
+        } catch (e) {
+          throw Exception('Failed to delete request. Status: ${response.statusCode}');
+        }
+      }
+      
+      notifyListeners();
+    } catch (error) {
+      rethrow;
+    }
   }
 }
