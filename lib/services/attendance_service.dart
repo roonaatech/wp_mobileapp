@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:intl/intl.dart';
+import 'package:geolocator/geolocator.dart';
 import '../config/app_config.dart';
 import 'activity_logger.dart';
 
@@ -319,6 +320,31 @@ class AttendanceService with ChangeNotifier {
   Future<void> startOnDuty(String clientName, String location, String purpose) async {
     final url = AppConfig.onDutyStart;
     try {
+      // Get current location
+      Position? position;
+      try {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+          print('Location services are disabled.');
+        }
+        
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        
+        if (permission == LocationPermission.deniedForever || permission == LocationPermission.denied) {
+          print('Location permissions are denied.');
+        } else {
+          position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+            timeLimit: const Duration(seconds: 10),
+          );
+        }
+      } catch (e) {
+        print('Error getting location: $e');
+      }
+
       final response = await _client.post(
         Uri.parse(url),
         headers: {
@@ -329,8 +355,8 @@ class AttendanceService with ChangeNotifier {
           'client_name': clientName,
           'location': location,
           'purpose': purpose,
-          'latitude': '0.0',
-          'longitude': '0.0',
+          'latitude': position?.latitude.toString() ?? '0.0',
+          'longitude': position?.longitude.toString() ?? '0.0',
         }),
       );
 
@@ -347,6 +373,31 @@ class AttendanceService with ChangeNotifier {
   Future<void> endOnDuty() async {
     final url = AppConfig.onDutyEnd;
     try {
+      // Get current location
+      Position? position;
+      try {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+          print('Location services are disabled.');
+        }
+        
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        
+        if (permission == LocationPermission.deniedForever || permission == LocationPermission.denied) {
+          print('Location permissions are denied.');
+        } else {
+          position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+            timeLimit: const Duration(seconds: 10),
+          );
+        }
+      } catch (e) {
+        print('Error getting location: $e');
+      }
+
       final response = await _client.post(
         Uri.parse(url),
         headers: {
@@ -354,8 +405,8 @@ class AttendanceService with ChangeNotifier {
           'x-access-token': token!,
         },
         body: json.encode({
-          'latitude': '0.0',
-          'longitude': '0.0',
+          'latitude': position?.latitude.toString() ?? '0.0',
+          'longitude': position?.longitude.toString() ?? '0.0',
         }),
       );
 
