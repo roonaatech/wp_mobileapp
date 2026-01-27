@@ -413,6 +413,10 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   }
 
   Future<void> _selectDateRange() async {
+    // Refresh pending and approved leaves from database when calendar opens
+    print('[ApplyLeave] Calendar opened - refreshing leaves from DB');
+    await _fetchMyLeaves();
+    
     // Debug prints
     print('Opening calendar. Existing leaves status map: ${_existingLeavesStatus.length} entries');
     _existingLeavesStatus.forEach((k, v) => print('Date: $k, Status: $v'));
