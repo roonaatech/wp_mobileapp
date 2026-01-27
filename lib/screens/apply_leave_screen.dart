@@ -175,6 +175,53 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     }
   }
 
+  void _showLeaveTypeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select Leave Type'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _leaveTypes.length,
+            itemBuilder: (context, index) {
+              final type = _leaveTypes[index];
+              final isSelected = _leaveType == type['name'];
+              return ListTile(
+                title: Text(type['name']),
+                selected: isSelected,
+                selectedTileColor: const Color(0xFF3B82F6).withOpacity(0.2),
+                onTap: () {
+                  setState(() {
+                    _leaveType = type['name'];
+                    _selectedLeaveAllowedDays = type['days_allowed'] ?? 0;
+                    _selectedLeaveBalance = _userLeaveBalance[type['name']] ?? 0;
+                    print('[DEBUG] Selected leave type: ${type['name']}');
+                    print('[DEBUG] Balance: $_selectedLeaveBalance');
+                  });
+                  Navigator.pop(context);
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -202,39 +249,23 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              DropdownButtonFormField<String>(
-                value: _leaveType,
+              TextFormField(
+                readOnly: true,
+                controller: TextEditingController(text: _leaveType ?? ''),
                 decoration: const InputDecoration(
                   labelText: 'Leave Type',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.category),
+                  suffixIcon: Icon(Icons.arrow_drop_down),
                 ),
-                items: _leaveTypes.map((type) {
-                  return DropdownMenuItem<String>(
-                    value: type['name'], 
-                    child: Text(type['name']),
-                  );
-                }).toList(),
-                onChanged: (val) {
-                  setState(() {
-                    _leaveType = val;
-                    // Get allowed days for selected leave type
-                    if (val != null) {
-                      final selectedType = _leaveTypes.firstWhere(
-                        (type) => type['name'] == val,
-                        orElse: () => null,
-                      );
-                      _selectedLeaveAllowedDays = selectedType?['days_allowed'] ?? 0;
-                      
-                      // Get balance for selected leave type
-                      print('[DEBUG] Selected leave type: $val');
-                      print('[DEBUG] Available balance map: $_userLeaveBalance');
-                      _selectedLeaveBalance = _userLeaveBalance[val] ?? 0;
-                      print('[DEBUG] Balance for $val: $_selectedLeaveBalance');
-                    }
-                  });
+                onTap: () async {
+                  print('[ApplyLeave] Leave Type field tapped - refreshing from DB');
+                  await _fetchLeaveTypes();
+                  if (mounted) {
+                    _showLeaveTypeDialog();
+                  }
                 },
-                 validator: (value) => value == null ? 'Please select a leave type' : null,
+                validator: (value) => value?.isEmpty ?? true ? 'Please select a leave type' : null,
               ),
               // Balance Available display disabled
               // if (_leaveType != null && _selectedLeaveBalance != null)
