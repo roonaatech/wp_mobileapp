@@ -72,6 +72,7 @@ class AuthService with ChangeNotifier {
           'email': email,
           'password': password,
           'forceLocal': forceLocal,
+          'is_mobile_app': true,
         }),
       );
 
