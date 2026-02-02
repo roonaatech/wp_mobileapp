@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../widgets/brand_logo.dart';
 import '../services/auth_service.dart';
+import '../config/app_config.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,6 +19,26 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   var _isLoading = false;
   bool _obscurePassword = true;
+  String _versionInfo = "";
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _versionInfo = "v${info.version} (${info.buildNumber})";
+        });
+      }
+    } catch (e) {
+      print("Error loading version: $e");
+    }
+  }
 
   Future<void> _submit({bool forceLocal = false}) async {
     if (!_formKey.currentState!.validate()) {
@@ -633,6 +655,22 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
+              ),
+
+              // Version Info
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Opacity(
+                  opacity: 0.5,
+                  child: Text(
+                    _versionInfo.isNotEmpty ? _versionInfo : 'v${AppConfig.appVersion} (${AppConfig.appBuild})',
+                    style: GoogleFonts.poppins(
+                      color: const Color(0xFF6B7280),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
               ),
 
               // Copyright Footer
