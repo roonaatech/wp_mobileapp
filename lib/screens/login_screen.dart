@@ -501,26 +501,30 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: () async {
                     Navigator.of(ctx).pop();
                     final url = Uri.parse(error.downloadUrl);
+                    print('Attempting to open download URL: ${error.downloadUrl}');
                     try {
-                      if (await canLaunchUrl(url)) {
-                        await launchUrl(url, mode: LaunchMode.externalApplication);
-                      } else {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Could not open download link. Please download manually from: ${error.downloadUrl}'),
-                              backgroundColor: Colors.red,
-                              duration: const Duration(seconds: 5),
-                            ),
-                          );
-                        }
+                      // Try to launch directly - don't rely on canLaunchUrl which can be unreliable
+                      final launched = await launchUrl(
+                        url, 
+                        mode: LaunchMode.externalApplication,
+                      );
+                      if (!launched && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Could not open download link. Please download manually from: ${error.downloadUrl}'),
+                            backgroundColor: Colors.red,
+                            duration: const Duration(seconds: 8),
+                          ),
+                        );
                       }
                     } catch (e) {
+                      print('Error launching URL: $e');
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('Error opening download: $e'),
+                            content: Text('Error opening download: $e. URL: ${error.downloadUrl}'),
                             backgroundColor: Colors.red,
+                            duration: const Duration(seconds: 8),
                           ),
                         );
                       }

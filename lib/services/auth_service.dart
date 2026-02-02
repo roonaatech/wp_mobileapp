@@ -84,24 +84,30 @@ class AuthService with ChangeNotifier {
     final url = AppConfig.authSignIn;
     
     // Check if running in debug/development mode
+    // In release mode, dart.vm.product is true
+    // USE_LOCALHOST defaults to true for debug, but in release builds it's effectively false
     const bool isReleaseMode = bool.fromEnvironment('dart.vm.product');
     const bool useLocalhost = bool.fromEnvironment('USE_LOCALHOST', defaultValue: true);
-    final bool skipVersionCheck = !isReleaseMode || useLocalhost;
+    
+    // Skip version check only in debug mode when using localhost
+    // In release mode (isReleaseMode=true), always perform version check
+    final bool skipVersionCheck = !isReleaseMode && useLocalhost;
     
     // Get current app version (only needed for release builds)
     String? appVersion;
     if (!skipVersionCheck) {
-      appVersion = AppConfig.appVersion;
       try {
         final packageInfo = await PackageInfo.fromPlatform();
-        appVersion = packageInfo.version;
+        // Include build number: "1.3.0+7" format
+        appVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
       } catch (e) {
         print('Could not get package info: $e');
+        // Fallback to config version without build number
+        appVersion = AppConfig.appVersion;
       }
     }
     
-    print('Attempting login to: $url (Force Local: $forceLocal, App Version: ${appVersion ?? "skipped (dev mode)"})');
-    final client = _createHttpClient();
+    print('Attempting login to: $url (Force Local: $forceLocal, App Version: ${appVersion ?? "skipped (dev mode)"}, Release: $isReleaseMode)');    final client = _createHttpClient();
     try {
       final response = await client.post(
         Uri.parse(url),
