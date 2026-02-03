@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../widgets/brand_logo.dart';
 import '../services/auth_service.dart';
+import '../config/app_config.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,6 +20,26 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   var _isLoading = false;
   bool _obscurePassword = true;
+  String _versionInfo = "";
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _versionInfo = "v${info.version} (${info.buildNumber})";
+        });
+      }
+    } catch (e) {
+      print("Error loading version: $e");
+    }
+  }
 
   Future<void> _submit({bool forceLocal = false}) async {
     if (!_formKey.currentState!.validate()) {
@@ -39,6 +62,8 @@ class _LoginScreenState extends State<LoginScreen> {
          _showConfirmationDialog(context, error.message);
       } else if (error is AuthSetupRequiredException) {
          _showWelcomeDialog(context);
+      } else if (error is AppUpdateRequiredException) {
+         _showUpdateRequiredDialog(context, error);
       } else if (errorMessage.toLowerCase().contains("inactive")) {
         _showInactiveDialog(context);
       } else {
@@ -295,6 +320,243 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: const Text(
                     'Okay, Got it',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showUpdateRequiredDialog(BuildContext context, AppUpdateRequiredException error) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.rectangle,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 10.0,
+                offset: Offset(0.0, 10.0),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.orange.shade100, width: 2),
+                ),
+                child: const Text(
+                  '📲',
+                  style: TextStyle(fontSize: 32),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Update Required',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'A new version of WorkPulse is available!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Column(
+                          children: [
+                            Text(
+                              'Your Version',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'v${error.currentVersion}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.red.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(width: 16),
+                        Icon(Icons.arrow_forward, color: Colors.grey.shade400),
+                        const SizedBox(width: 16),
+                        Column(
+                          children: [
+                            Text(
+                              'Latest Version',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'v${error.latestVersion}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    if (error.releaseNotes != null && error.releaseNotes!.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      const SizedBox(height: 8),
+                      Text(
+                        "What's New:",
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        error.releaseNotes!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                          height: 1.4,
+                        ),
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Please update to continue using the app.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    Navigator.of(ctx).pop();
+                    final url = Uri.parse(error.downloadUrl);
+                    print('Attempting to open download URL: ${error.downloadUrl}');
+                    try {
+                      // Try to launch directly - don't rely on canLaunchUrl which can be unreliable
+                      final launched = await launchUrl(
+                        url, 
+                        mode: LaunchMode.externalApplication,
+                      );
+                      if (!launched && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Could not open download link. Please download manually from: ${error.downloadUrl}'),
+                            backgroundColor: Colors.red,
+                            duration: const Duration(seconds: 8),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      print('Error launching URL: $e');
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error opening download: $e. URL: ${error.downloadUrl}'),
+                            backgroundColor: Colors.red,
+                            duration: const Duration(seconds: 8),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.download),
+                  label: const Text(
+                    'Download Update',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3B82F6),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  setState(() { _isLoading = false; });
+                },
+                child: Text(
+                  'Close',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
                   ),
                 ),
               ),
@@ -633,6 +895,22 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
+              ),
+
+              // Version Info
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Opacity(
+                  opacity: 0.5,
+                  child: Text(
+                    _versionInfo.isNotEmpty ? _versionInfo : 'v${AppConfig.appVersion} (${AppConfig.appBuild})',
+                    style: GoogleFonts.poppins(
+                      color: const Color(0xFF6B7280),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
               ),
 
               // Copyright Footer

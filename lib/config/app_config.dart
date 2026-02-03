@@ -94,6 +94,11 @@ class AppConfig {
   static String get onDutyActive => '$apiBaseUrl/api/onduty/active';
   static String get onDutyDetail => '$apiBaseUrl/api/onduty'; // Append ID: $onDutyDetail/{id}
   
+  // APK endpoints
+  static String get apkLatest => '$apiBaseUrl/api/apk/latest';
+  static String get apkCheckVersion => '$apiBaseUrl/api/apk/check-version';
+  static String get apkDownloadLatest => '$apiBaseUrl/api/apk/download/latest';
+  
   // ============================================
   // APP METADATA
   // ============================================
