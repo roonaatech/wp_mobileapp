@@ -900,16 +900,39 @@ class _LoginScreenState extends State<LoginScreen> {
               // Version Info
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Opacity(
-                  opacity: 0.5,
-                  child: Text(
-                    _versionInfo.isNotEmpty ? _versionInfo : 'v${AppConfig.appVersion} (${AppConfig.appBuild})',
-                    style: GoogleFonts.poppins(
-                      color: const Color(0xFF6B7280),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Environment Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: Color(AppConfig.envColorValue),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        AppConfig.envLabel,
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                  ),
+                    // Version Text
+                    Opacity(
+                      opacity: 0.5,
+                      child: Text(
+                        _versionInfo.isNotEmpty ? _versionInfo : 'v${AppConfig.appVersion} (${AppConfig.appBuild})',
+                        style: GoogleFonts.poppins(
+                          color: const Color(0xFF6B7280),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
