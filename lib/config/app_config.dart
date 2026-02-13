@@ -84,6 +84,10 @@ class AppConfig {
   static String get onDutyEnd => '$apiBaseUrl/api/onduty/end';
   static String get onDutyActive => '$apiBaseUrl/api/onduty/active';
   static String get onDutyDetail => '$apiBaseUrl/api/onduty'; // Append ID: $onDutyDetail/{id}
+
+  // Time-off endpoints
+  static String get timeOffApply => '$apiBaseUrl/api/timeoff/apply';
+  static String get timeOffDetail => '$apiBaseUrl/api/timeoff'; // Append ID: $timeOffDetail/{id}
   
   // APK endpoints
   static String get apkLatest => '$apiBaseUrl/api/apk/latest';

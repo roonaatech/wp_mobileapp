@@ -4,7 +4,9 @@ import '../services/auth_service.dart';
 import '../services/attendance_service.dart';
 import '../utils/dialogs.dart';
 import 'apply_leave_screen.dart';
+import 'apply_timeoff_screen.dart';
 import 'on_duty_screen.dart';
+import 'package:intl/intl.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,12 +18,17 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   final GlobalKey<_LeaveDashboardState> _dashboardKey = GlobalKey();
+  Key _timeOffKey = UniqueKey();
 
   void _onTabTapped(int index) {
     if (index == 0 && _currentIndex == 0) {
       // If tapping Home while on Home, refresh
       _dashboardKey.currentState?._loadLeaves();
     } else {
+      if (index == 2) {
+        // Reset Time-Off screen when navigating to it
+        _timeOffKey = UniqueKey();
+      }
       setState(() {
         _currentIndex = index;
       });
@@ -39,7 +46,24 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _handleEdit(Map<String, dynamic> item) {
-    bool isLeave = item['type'] == 'leave';
+    String type = item['type'] ?? 'leave';
+    
+    if (type == 'time_off') {
+       Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (ctx) => ApplyTimeOffScreen(
+            existingRequest: item,
+            onSuccess: () {
+              Navigator.pop(ctx);
+              _dashboardKey.currentState?._loadLeaves();
+            },
+          ),
+        ),
+      );
+      return;
+    }
+
+    bool isLeave = type == 'leave';
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (ctx) => isLeave
@@ -65,6 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             LeaveDashboard(key: _dashboardKey),
             ApplyLeaveScreen(onSuccess: _goToHomeAndRefresh),
+            ApplyTimeOffScreen(key: _timeOffKey, onSuccess: _goToHomeAndRefresh),
             OnDutyScreen(onVisitEnded: _goToHomeAndRefresh),
           ],
         ),
@@ -91,13 +116,18 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               _buildNavItem(
                 icon: Icons.calendar_month_outlined, 
-                label: 'Apply Leave', 
+                label: 'Leave', 
                 index: 1,
+              ),
+              _buildNavItem(
+                icon: Icons.access_time, 
+                label: 'Time-Off', 
+                index: 2,
               ),
               _buildNavItem(
                 icon: Icons.business_center_outlined, 
                 label: 'On-Duty', 
-                index: 2,
+                index: 3,
               ),
             ],
           ),
@@ -208,6 +238,9 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
             DateTime? date;
             if (item['type'] == 'leave') {
               date = DateTime.tryParse(item['start'].toString());
+            } else if (item['type'] == 'time_off') {
+               // For time_off, backend sends start/end as date.
+               date = DateTime.tryParse(item['date']?.toString() ?? item['start'].toString());
             } else {
               date = DateTime.tryParse(item['start'].toString());
             }
@@ -245,10 +278,13 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
   void _applyFilterAndYear(String? filterName, int year) {
     final filtered = _leaves.where((item) {
       // First filter by year
+      // First filter by year
       try {
         DateTime? date;
         if (item['type'] == 'leave') {
           date = DateTime.tryParse(item['start'].toString());
+        } else if (item['type'] == 'time_off') {
+          date = DateTime.tryParse(item['date']?.toString() ?? item['start'].toString());
         } else {
           date = DateTime.tryParse(item['start'].toString());
         }
@@ -275,6 +311,8 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
           return item['status']?.toLowerCase() == 'rejected';
         case 'Pending':
           return item['status']?.toLowerCase() == 'pending';
+        case 'Total Time-Off':
+          return item['type'] == 'time_off';
         case 'Active On-Duty':
           return (item['type'] == 'on-duty' || item['type'] == 'on_duty') && item['end'] == null;
         default:
@@ -294,6 +332,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
 
     int totalLeaves = 0;
     int onDutyLeaves = 0;
+    int timeOffLeaves = 0;
     int pendingLeaves = 0;
     int approvedLeaves = 0;
     int rejectedLeaves = 0;
@@ -305,6 +344,11 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
 
       if (type == 'leave') {
         totalLeaves++;
+        if (status == 'pending') pendingLeaves++;
+        if (status == 'approved') approvedLeaves++;
+        if (status == 'rejected') rejectedLeaves++;
+      } else if (type == 'time_off') {
+        timeOffLeaves++;
         if (status == 'pending') pendingLeaves++;
         if (status == 'approved') approvedLeaves++;
         if (status == 'rejected') rejectedLeaves++;
@@ -325,7 +369,8 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
       'approvedLeaves': approvedLeaves,
       'rejectedLeaves': rejectedLeaves,
       'activeOnDuty': activeOnDuty,
-      'onDutyLeaves': onDutyLeaves
+      'onDutyLeaves': onDutyLeaves,
+      'timeOffLeaves': timeOffLeaves,
     };
   }
 
@@ -335,9 +380,15 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
     final ninetyDaysFromNow = today.add(const Duration(days: 90));
     
     return _leaves.where((item) {
-      if (item['type'] != 'leave') return false;
+      if (item['status']?.toLowerCase() != 'approved' && item['status']?.toLowerCase() != 'pending') return false;
       try {
-        final startDate = DateTime.tryParse(item['start'].toString());
+        DateTime? startDate;
+        if (item['type'] == 'time_off') {
+          startDate = DateTime.tryParse(item['date']?.toString() ?? item['start'].toString());
+        } else {
+           startDate = DateTime.tryParse(item['start'].toString());
+        }
+        
         if (startDate == null) return false;
         return (startDate.isAtSameMomentAs(today) || startDate.isAfter(today)) && 
                startDate.isBefore(ninetyDaysFromNow);
@@ -374,20 +425,47 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
   }
 
   String _formatDateRange(dynamic item) {
-    final isLeave = item['type'] == 'leave';
-    
-    if (isLeave) {
+    if (item['type'] == 'time_off') {
+       try {
+        final date = DateTime.parse(item['date'] ?? item['start'].toString());
+        final dateStr = '${date.day}/${date.month}'; // Assuming backend format is suitable, or format with DateFormat
+        
+        // Parse time strings (HH:mm:ss) into TimeOfDay or DateTime to format
+        final startT = _parseTimeString(item['start_time']);
+        final endT = _parseTimeString(item['end_time']);
+        
+        final startF = startT != null ? DateFormat('h:mm a').format(DateTime(2022,1,1, startT.hour, startT.minute)) : '';
+        final endF = endT != null ? DateFormat('h:mm a').format(DateTime(2022,1,1, endT.hour, endT.minute)) : '';
+        
+        return '$dateStr ($startF - $endF)';
+       } catch (e) {
+         return item['start'].toString();
+       }
+    } else if (item['type'] == 'leave') {
       return '${item['start']}  -  ${item['end']}';
     } else {
+      // On-Duty
       final start = DateTime.parse(item['start'].toString()).toLocal();
       final end = item['end'] != null ? DateTime.parse(item['end'].toString()).toLocal() : null;
-      String dateRange = '${start.day}/${start.month} ${start.hour}:${start.minute.toString().padLeft(2,'0')}';
+      
+      String dateRange = '${start.day}/${start.month} ${DateFormat('h:mm a').format(start)}';
+      
       if (end != null) {
-        dateRange += ' - ${end.hour}:${end.minute.toString().padLeft(2,'0')}';
+        dateRange += ' - ${DateFormat('h:mm a').format(end)}';
       } else {
         dateRange += ' (Active)';
       }
       return dateRange;
+    }
+  }
+
+  TimeOfDay? _parseTimeString(String? timeStr) {
+    if (timeStr == null) return null;
+    try {
+      final parts = timeStr.split(':');
+      return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+    } catch (e) {
+      return null;
     }
   }
 
@@ -432,7 +510,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
     );
   }
 
-  Future<void> _deleteRequest(int id, {bool isOnDuty = false}) async {
+  Future<void> _deleteRequest(int id, {bool isOnDuty = false, bool isTimeOff = false}) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -454,7 +532,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
     if (confirmed == true) {
       try {
         final service = Provider.of<AttendanceService>(context, listen: false);
-        await service.deleteLeaveOrOnDuty(id, isOnDuty: isOnDuty);
+        await service.deleteLeaveOrOnDuty(id, isOnDuty: isOnDuty, isTimeOff: isTimeOff);
         
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Request deleted successfully!')),
@@ -471,6 +549,25 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
     final status = item['status'];
     final statusColor = _getStatusColor(status);
     
+    // Custom Title Logic for Time-Off
+    String title = isLeave ? item['title'] : 'On-Duty: ${item['title'].toString().replaceAll('On-Duty: ', '')}';
+    if (item['type'] == 'time_off') {
+       try {
+         final date = DateTime.parse(item['date'] ?? item['start'].toString());
+         final formattedDate = DateFormat('MMM d').format(date);
+         
+         // Extract duration from subtitle (e.g., "3hrs : reason")
+         // Backend returns subtitle as "3hrs : reason" or "duration : reason"
+         final subtitle = item['subtitle'] ?? '';
+         final parts = subtitle.toString().split(' : ');
+         final duration = parts.isNotEmpty ? parts[0] : '';
+         
+         title = '$duration on $formattedDate';
+       } catch (e) {
+         title = 'Time-Off';
+       }
+    }
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -502,7 +599,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                 children: [
                   Expanded(
                     child: Text(
-                      isLeave ? item['title'] : 'On-Duty: ${item['title'].toString().replaceAll('On-Duty: ', '')}',
+                      title,
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -568,7 +665,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
               const SizedBox(height: 16),
               
               // Days/Hours (if leave)
-              if (isLeave && item['days_requested'] != null) ...[
+              if (isLeave && item['type'] != 'time_off' && item['days_requested'] != null) ...[
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
@@ -670,8 +767,8 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                 const SizedBox(height: 16),
               ],
               
-              // Subtitle/Location
-              if (item['subtitle'] != null) ...[
+              // Subtitle/Location (Hide if Time-Off since it's in title/date)
+              if (item['type'] != 'time_off' && item['subtitle'] != null) ...[
                 Text(
                   'Details',
                   style: TextStyle(
@@ -864,7 +961,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey[600]),
                                   ),
                                   Text(
-                                    '${item['createdAt']}',
+                                    DateFormat('MMM d, yyyy h:mm a').format(DateTime.parse(item['createdAt']).toLocal()),
                                     style: TextStyle(fontSize: 11, color: Colors.grey[700]),
                                   ),
                                 ],
@@ -890,7 +987,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey[600]),
                                   ),
                                   Text(
-                                    '${item['updatedAt']}',
+                                    DateFormat('MMM d, yyyy h:mm a').format(DateTime.parse(item['updatedAt']).toLocal()),
                                     style: TextStyle(fontSize: 11, color: Colors.grey[700]),
                                   ),
                                 ],
@@ -1205,6 +1302,11 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                       const SizedBox(width: 6),
                       SizedBox(
                         width: 120,
+                        child: _buildStatCard('Total Time-Off', (_stats['timeOffLeaves'] ?? 0).toString(), Colors.teal),
+                      ),
+                      const SizedBox(width: 6),
+                      SizedBox(
+                        width: 120,
                         child: _buildStatCard('Approved', (_stats['approvedLeaves'] ?? 0).toString(), Colors.green),
                       ),
                       const SizedBox(width: 6),
@@ -1353,8 +1455,8 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          isLeave ? const Color(0xFF3B82F6) : const Color(0xFFC1272D),
-                          isLeave ? const Color(0xFF8B5CF6) : const Color(0xFFD63A44),
+                          isLeave ? const Color(0xFF3B82F6) : (item['type'] == 'time_off' ? Colors.teal : const Color(0xFFC1272D)),
+                          isLeave ? const Color(0xFF8B5CF6) : (item['type'] == 'time_off' ? Colors.tealAccent.shade700 : const Color(0xFFD63A44)),
                         ],
                       ),
                       borderRadius: BorderRadius.circular(8),
@@ -1367,7 +1469,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                       ],
                     ),
                     child: Text(
-                      isLeave ? item['title'] : 'On-Duty',
+                      isLeave ? item['title'] : (item['type'] == 'time_off' ? 'Time Off' : 'On-Duty'),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11,
@@ -1406,9 +1508,21 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (!isLeave) ...[
+                        if (!isLeave && item['type'] != 'time_off') ...[
                           Text(
                             item['title'].toString().replaceAll('On-Duty: ', ''),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              color: Colors.grey[900],
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                        ],
+                        if (item['type'] == 'time_off') ...[
+                           Text(
+                            item['subtitle'] ?? 'Time Off',
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 14,
@@ -1497,7 +1611,8 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                               }
                               final itemType = item['type']?.toString() ?? '';
                               final isOnDuty = itemType == 'on-duty' || itemType == 'on_duty';
-                              _deleteRequest(id, isOnDuty: isOnDuty);
+                              final isTimeOff = itemType == 'time_off';
+                              _deleteRequest(id, isOnDuty: isOnDuty, isTimeOff: isTimeOff);
                             } catch (e) {
                               showErrorDialog(context, 'Error: Invalid request ID format');
                             }
