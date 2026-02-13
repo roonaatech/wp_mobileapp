@@ -97,6 +97,45 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
+  Future<void> applyTimeOff(DateTime date, TimeOfDay startTime, TimeOfDay endTime, String reason) async {
+    final url = AppConfig.timeOffApply;
+    final DateFormat dateFormatter = DateFormat('yyyy-MM-dd');
+    
+    // Format TimeOfDay to HH:mm:ss
+    final String startStr = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}:00';
+    final String endStr = '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}:00';
+
+    try {
+      final response = await _client.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+        body: json.encode({
+          'date': dateFormatter.format(date),
+          'start_time': startStr,
+          'end_time': endStr,
+          'reason': reason,
+        }),
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        // Try to parse error message
+        String message = 'Failed to apply for time-off';
+        try {
+          final body = json.decode(response.body);
+          message = body['message'] ?? message;
+        } catch (_) {}
+        throw Exception(message);
+      }
+      
+      notifyListeners();
+    } catch (error) {
+      rethrow;
+    }
+  }
+
   Future<Map<String, dynamic>> getDashboardStats() async {
     final url = AppConfig.leaveStats;
     try {
@@ -261,6 +300,43 @@ class AttendanceService with ChangeNotifier {
 
       if (response.statusCode != 200) {
         throw Exception('Failed to update leave: ${response.statusCode} - ${response.body}');
+      }
+      notifyListeners();
+    } catch (error) {
+      rethrow;
+    }
+  }
+
+  Future<void> updateTimeOff(int id, DateTime date, TimeOfDay startTime, TimeOfDay endTime, String reason) async {
+    final url = '${AppConfig.timeOffDetail}/$id';
+    final DateFormat dateFormatter = DateFormat('yyyy-MM-dd');
+
+    // Format TimeOfDay to HH:mm:ss
+    final String startStr = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}:00';
+    final String endStr = '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}:00';
+
+    try {
+      final response = await _client.put(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+        body: json.encode({
+          'date': dateFormatter.format(date),
+          'start_time': startStr,
+          'end_time': endStr,
+          'reason': reason,
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        String message = 'Failed to update time-off';
+        try {
+          final body = json.decode(response.body);
+          message = body['message'] ?? message;
+        } catch (_) {}
+        throw Exception(message);
       }
       notifyListeners();
     } catch (error) {
@@ -485,15 +561,21 @@ class AttendanceService with ChangeNotifier {
     print('🧪 ========== NETWORK TEST ENDED ==========\n');
   }
 
-  Future<void> deleteLeaveOrOnDuty(int id, {bool isOnDuty = false}) async {
+  Future<void> deleteLeaveOrOnDuty(int id, {bool isOnDuty = false, bool isTimeOff = false}) async {
     if (token == null) {
       throw Exception('Not authenticated');
     }
 
-    // Use the same URL pattern as updateLeave and updateOnDuty
-    final urlString = isOnDuty 
-        ? '${AppConfig.onDutyDetail}/$id'
-        : '${AppConfig.leaveDetail}/$id';
+    // Use the same URL pattern as updateLeave, updateOnDuty, and updateTimeOff
+    String urlString;
+    if (isTimeOff) {
+      urlString = '${AppConfig.timeOffDetail}/$id';
+    } else if (isOnDuty) {
+      urlString = '${AppConfig.onDutyDetail}/$id';
+    } else {
+      urlString = '${AppConfig.leaveDetail}/$id';
+    }
+    
     final url = Uri.parse(urlString);
     
     try {
