@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../services/attendance_service.dart';
 import '../utils/dialogs.dart';
+import '../utils/ist_helper.dart';
 
 class ApplyTimeOffScreen extends StatefulWidget {
   final VoidCallback? onSuccess;
@@ -64,9 +65,9 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
   Future<void> _selectDate() async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate ?? DateTime.now(),
-      firstDate: DateTime.now(), // Can't apply for past dates usually? Or maybe allow it?
-      lastDate: DateTime.now().add(const Duration(days: 90)),
+      initialDate: _selectedDate ?? ISTHelper.now(),
+      firstDate: ISTHelper.now(), // Can't apply for past dates usually? Or maybe allow it?
+      lastDate: ISTHelper.now().add(const Duration(days: 90)),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(

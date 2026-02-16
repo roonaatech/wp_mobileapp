@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../services/attendance_service.dart';
 import '../utils/dialogs.dart';
+import '../utils/ist_helper.dart';
 
 class ApplyLeaveScreen extends StatefulWidget {
   final VoidCallback? onSuccess;
@@ -424,7 +425,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     // Custom calendar picker with highligting
     DateTime? tempStart = _startDate;
     DateTime? tempEnd = _endDate;
-    DateTime focusedDay = _startDate ?? DateTime.now();
+    DateTime focusedDay = _startDate ?? ISTHelper.now();
 
     await showDialog(
       context: context,
@@ -453,8 +454,8 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                       ),
                     ),
                     TableCalendar(
-                      firstDay: DateTime.now(),
-                      lastDay: DateTime.now().add(const Duration(days: 365)),
+                      firstDay: ISTHelper.now(),
+                      lastDay: ISTHelper.now().add(const Duration(days: 365)),
                       focusedDay: focusedDay,
                       selectedDayPredicate: (day) => false, // We use range selection
                       rangeStartDay: tempStart,
@@ -463,7 +464,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                       rangeSelectionMode: RangeSelectionMode.toggledOn,
                       enabledDayPredicate: (day) {
                         // Disable past dates (before today)
-                        final today = DateTime.now();
+                        final today = ISTHelper.now();
                         final todayOnly = DateTime(today.year, today.month, today.day);
                         final dayOnly = DateTime(day.year, day.month, day.day);
                         return !dayOnly.isBefore(todayOnly);

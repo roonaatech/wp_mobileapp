@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/change_password_screen.dart';
 import 'services/attendance_service.dart';
 import 'services/auth_service.dart';
 import 'utils/ist_helper.dart';
@@ -89,6 +90,9 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const AuthWrapper(),
+      routes: {
+        '/change-password': (context) => const ChangePasswordScreen(),
+      },
     );
   }
 }

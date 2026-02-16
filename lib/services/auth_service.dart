@@ -52,7 +52,8 @@ class AuthService with ChangeNotifier {
   String? _token;
   String? _userId;
   String? _userName;
-  
+  int? _externalUserId; // userid from backend (null = WorkPulse-only user)
+
   bool get isAuth {
     return _token != null;
   }
@@ -65,6 +66,11 @@ class AuthService with ChangeNotifier {
     return _userName;
   }
 
+  // Check if user is WorkPulse-only (not synced from external system)
+  bool get isWorkPulseOnlyUser {
+    return _externalUserId == null;
+  }
+
   Future<bool> tryAutoLogin() async {
     final prefs = await SharedPreferences.getInstance();
     if (!prefs.containsKey('token')) {
@@ -72,6 +78,14 @@ class AuthService with ChangeNotifier {
     }
     _token = prefs.getString('token');
     _userName = prefs.getString('userName') ?? 'User';
+
+    // Load userData to get externalUserId
+    final userDataString = prefs.getString('userData');
+    if (userDataString != null) {
+      final userData = json.decode(userDataString);
+      _externalUserId = userData['externalUserId'];
+    }
+
     notifyListeners();
     return true;
   }
@@ -160,12 +174,14 @@ class AuthService with ChangeNotifier {
       _token = responseData['accessToken'];
       _userId = responseData['id'].toString();
       _userName = '${responseData['firstname'] ?? ''} ${responseData['lastname'] ?? ''}'.trim();
-      
+      _externalUserId = responseData['userid']; // Can be null for WorkPulse-only users
+
       final prefs = await SharedPreferences.getInstance();
       final userData = json.encode({
         'token': _token,
         'userId': _userId,
         'userName': _userName,
+        'externalUserId': _externalUserId,
       });
       prefs.setString('userData', userData);
       prefs.setString('token', _token!);
@@ -184,10 +200,11 @@ class AuthService with ChangeNotifier {
   void logout() async {
     final userName = _userName ?? 'User';
     final token = _token;
-    
+
     _token = null;
     _userId = null;
     _userName = null;
+    _externalUserId = null;
     
     final prefs = await SharedPreferences.getInstance();
     prefs.remove('userData');

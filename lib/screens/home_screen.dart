@@ -181,7 +181,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
   List<dynamic> _leaves = [];
   String? _selectedFilter;
   List<dynamic> _filteredLeaves = [];
-  int _selectedYear = DateTime.now().year;
+  int _selectedYear = ISTHelper.now().year;
   Set<int> _availableYears = {};
   final ScrollController _statsScrollController = ScrollController();
   Map<String, dynamic> _stats = {
@@ -253,13 +253,13 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
           }
         }
         // Always include current year
-        years.add(DateTime.now().year);
-        
+        years.add(ISTHelper.now().year);
+
         setState(() {
           _leaves = leaves;
           _stats = stats;
           _availableYears = years;
-          _selectedYear = DateTime.now().year;
+          _selectedYear = ISTHelper.now().year;
           // Always default to Pending filter on home page
           _selectedFilter = 'Pending';
           _applyFilterAndYear('Pending', _selectedYear);
@@ -376,7 +376,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
   }
 
   List<dynamic> _getUpcomingLeaves() {
-    final now = DateTime.now();
+    final now = ISTHelper.now();
     final today = DateTime(now.year, now.month, now.day);
     final ninetyDaysFromNow = today.add(const Duration(days: 90));
     
@@ -1093,14 +1093,40 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                     children: [
                       const Text('Welcome,', style: TextStyle(color: Colors.white70, fontSize: 14)),
                       Text(
-                        authService.userName ?? 'User', 
+                        authService.userName ?? 'User',
                         style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)
                       ),
                     ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.logout, color: Colors.white),
-                    onPressed: () => authService.logout(),
+                  Row(
+                    children: [
+                      // Settings Menu (only show if WorkPulse-only user)
+                      if (authService.isWorkPulseOnlyUser)
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.settings, color: Colors.white),
+                          onSelected: (value) {
+                            if (value == 'change_password') {
+                              Navigator.pushNamed(context, '/change-password');
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'change_password',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.lock, size: 18, color: Color(0xFF3B82F6)),
+                                  SizedBox(width: 8),
+                                  Text('Change Password'),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.logout, color: Colors.white),
+                        onPressed: () => authService.logout(),
+                      ),
+                    ],
                   )
                 ],
               ),
@@ -1172,7 +1198,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                       ..._availableYears.toList()..sort((a, b) => b.compareTo(a)),
                     ].map((year) {
                       final isSelected = _selectedYear == year;
-                      final isCurrentYear = year == DateTime.now().year;
+                      final isCurrentYear = year == ISTHelper.now().year;
                       
                       return Padding(
                         padding: const EdgeInsets.only(right: 4.0),
