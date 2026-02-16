@@ -211,7 +211,30 @@ class AuthService with ChangeNotifier {
     
     // Log activity via mobile logger
     await ActivityLogger.logLogout(userName);
-    
+
     notifyListeners();
+  }
+
+  /// Fetch application timezone from public settings endpoint
+  /// This can be called without authentication
+  static Future<String?> fetchAppTimezone() async {
+    try {
+      final url = AppConfig.settingsPublic;
+      final client = _createHttpClient();
+
+      final response = await client.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        // The API returns { settings: [...], map: {...} }
+        // The map contains key-value pairs like { 'application_timezone': 'America/Chicago' }
+        if (data['map'] != null && data['map']['application_timezone'] != null) {
+          return data['map']['application_timezone'] as String;
+        }
+      }
+    } catch (error) {
+      print('Error fetching timezone setting: $error');
+    }
+    return null; // Return null if fetch fails, will use default
   }
 }

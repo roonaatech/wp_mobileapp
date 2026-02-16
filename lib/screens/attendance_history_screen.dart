@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../services/attendance_service.dart';
 import '../utils/ist_helper.dart';
 import '../utils/dialogs.dart';
@@ -81,7 +82,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   }
 
   String _formatDateTime(DateTime dt) {
-    return '${dt.day}/${dt.month}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    return DateFormat('d/M/yyyy h:mm a').format(dt);
   }
 
   String _getApprovalStatus(Map<String, dynamic> item) {

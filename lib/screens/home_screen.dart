@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/attendance_service.dart';
 import '../utils/dialogs.dart';
+import '../utils/ist_helper.dart';
 import 'apply_leave_screen.dart';
 import 'apply_timeoff_screen.dart';
 import 'on_duty_screen.dart';
@@ -445,11 +446,11 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
       return '${item['start']}  -  ${item['end']}';
     } else {
       // On-Duty
-      final start = DateTime.parse(item['start'].toString()).toLocal();
-      final end = item['end'] != null ? DateTime.parse(item['end'].toString()).toLocal() : null;
-      
+      final start = ISTHelper.parseUTCtoIST(item['start'].toString());
+      final end = item['end'] != null ? ISTHelper.parseUTCtoIST(item['end'].toString()) : null;
+
       String dateRange = '${start.day}/${start.month} ${DateFormat('h:mm a').format(start)}';
-      
+
       if (end != null) {
         dateRange += ' - ${DateFormat('h:mm a').format(end)}';
       } else {
@@ -961,7 +962,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey[600]),
                                   ),
                                   Text(
-                                    DateFormat('MMM d, yyyy h:mm a').format(DateTime.parse(item['createdAt']).toLocal()),
+                                    DateFormat('MMM d, yyyy h:mm a').format(ISTHelper.parseUTCtoIST(item['createdAt'])),
                                     style: TextStyle(fontSize: 11, color: Colors.grey[700]),
                                   ),
                                 ],
@@ -987,7 +988,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey[600]),
                                   ),
                                   Text(
-                                    DateFormat('MMM d, yyyy h:mm a').format(DateTime.parse(item['updatedAt']).toLocal()),
+                                    DateFormat('MMM d, yyyy h:mm a').format(ISTHelper.parseUTCtoIST(item['updatedAt'])),
                                     style: TextStyle(fontSize: 11, color: Colors.grey[700]),
                                   ),
                                 ],
