@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../services/attendance_service.dart';
 import '../utils/ist_helper.dart';
 import '../utils/dialogs.dart';
@@ -481,7 +482,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${_startTime!.hour.toString().padLeft(2, '0')}:${_startTime!.minute.toString().padLeft(2, '0')}',
+                          DateFormat('h:mm a').format(DateTime(2000, 1, 1, _startTime!.hour, _startTime!.minute)),
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,

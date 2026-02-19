@@ -5,13 +5,31 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/change_password_screen.dart';
 import 'services/attendance_service.dart';
 import 'services/auth_service.dart';
+import 'utils/ist_helper.dart';
 
 void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
-    
+
+    // Initialize timezone helper
+    await ISTHelper.initialize();
+
+    // Fetch and update timezone from backend
+    try {
+      final timezone = await AuthService.fetchAppTimezone();
+      if (timezone != null) {
+        await ISTHelper.setTimezone(timezone);
+        print('Timezone set to: $timezone');
+      } else {
+        print('Using default timezone: ${ISTHelper.getTimezoneName()}');
+      }
+    } catch (e) {
+      print('Error fetching timezone, using default: $e');
+    }
+
     // Suppress google_fonts asset loading errors (they'll fallback to system fonts)
     GoogleFonts.config.allowRuntimeFetching = false;
     
@@ -72,6 +90,9 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const AuthWrapper(),
+      routes: {
+        '/change-password': (context) => const ChangePasswordScreen(),
+      },
     );
   }
 }

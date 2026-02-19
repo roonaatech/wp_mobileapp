@@ -69,7 +69,10 @@ class AppConfig {
   
   static String get authSignIn => '$apiBaseUrl/api/auth/signin';
   static String get authCheck => '$apiBaseUrl/api/auth/check';
-  
+
+  // Settings endpoints
+  static String get settingsPublic => '$apiBaseUrl/api/settings/public';
+
   // Leave endpoints
   static String get leaveApply => '$apiBaseUrl/api/leave/apply';
   static String get leaveHistory => '$apiBaseUrl/api/leave/my-history';
