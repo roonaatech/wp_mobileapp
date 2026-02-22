@@ -44,7 +44,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     if (req['reason'] != null) _reasonController.text = req['reason'];
 
     try {
-      _selectedDate = DateTime.parse(req['date']);
+      _selectedDate = ISTHelper.parseUTCtoIST(req['date']);
       // Parse times (HH:mm:ss)
       final startParts = req['start_time'].split(':');
       final endParts = req['end_time'].split(':');
@@ -137,7 +137,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     if (time == null) return 'Select Time';
     final now = DateTime.now();
     final dt = DateTime(now.year, now.month, now.day, time.hour, time.minute);
-    return DateFormat('hh:mm a').format(dt);
+    return ISTHelper.formatTime(dt);
   }
 
   String _calculateDuration() {
@@ -250,7 +250,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
                   ),
                   child: Text(
                     _selectedDate != null
-                        ? DateFormat('dd/MM/yyyy').format(_selectedDate!)
+                        ? ISTHelper.formatDate(_selectedDate!)
                         : 'Select Date',
                     style: TextStyle(
                       color: _selectedDate != null ? Colors.black87 : Colors.grey[600],

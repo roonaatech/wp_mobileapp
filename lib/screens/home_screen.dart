@@ -238,12 +238,12 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
           try {
             DateTime? date;
             if (item['type'] == 'leave') {
-              date = DateTime.tryParse(item['start'].toString());
+              date = ISTHelper.parseUTCtoIST(item['start'].toString());
             } else if (item['type'] == 'time_off') {
                // For time_off, backend sends start/end as date.
-               date = DateTime.tryParse(item['date']?.toString() ?? item['start'].toString());
+               date = ISTHelper.parseUTCtoIST(item['date']?.toString() ?? item['start'].toString());
             } else {
-              date = DateTime.tryParse(item['start'].toString());
+              date = ISTHelper.parseUTCtoIST(item['start'].toString());
             }
             if (date != null) {
               years.add(date.year);
@@ -283,11 +283,11 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
       try {
         DateTime? date;
         if (item['type'] == 'leave') {
-          date = DateTime.tryParse(item['start'].toString());
+          date = ISTHelper.parseUTCtoIST(item['start'].toString());
         } else if (item['type'] == 'time_off') {
-          date = DateTime.tryParse(item['date']?.toString() ?? item['start'].toString());
+          date = ISTHelper.parseUTCtoIST(item['date']?.toString() ?? item['start'].toString());
         } else {
-          date = DateTime.tryParse(item['start'].toString());
+          date = ISTHelper.parseUTCtoIST(item['start'].toString());
         }
         if (date == null || date.year != year) {
           return false;
@@ -397,8 +397,8 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
         return false;
       }
     }).toList()..sort((a, b) {
-       final dateA = DateTime.tryParse(a['start'].toString()) ?? DateTime(2099, 12, 31);
-       final dateB = DateTime.tryParse(b['start'].toString()) ?? DateTime(2099, 12, 31);
+       final dateA = ISTHelper.parseUTCtoIST(a['start']?.toString() ?? a['date']?.toString() ?? '');
+       final dateB = ISTHelper.parseUTCtoIST(b['start']?.toString() ?? b['date']?.toString() ?? '');
        return dateA.compareTo(dateB);
     });
   }
@@ -428,15 +428,15 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
   String _formatDateRange(dynamic item) {
     if (item['type'] == 'time_off') {
        try {
-        final date = DateTime.parse(item['date'] ?? item['start'].toString());
-        final dateStr = '${date.day}/${date.month}'; // Assuming backend format is suitable, or format with DateFormat
+        final date = ISTHelper.parseUTCtoIST(item['date'] ?? item['start'].toString());
+        final dateStr = ISTHelper.formatDate(date, omitYear: true);
         
         // Parse time strings (HH:mm:ss) into TimeOfDay or DateTime to format
         final startT = _parseTimeString(item['start_time']);
         final endT = _parseTimeString(item['end_time']);
         
-        final startF = startT != null ? DateFormat('h:mm a').format(DateTime(2022,1,1, startT.hour, startT.minute)) : '';
-        final endF = endT != null ? DateFormat('h:mm a').format(DateTime(2022,1,1, endT.hour, endT.minute)) : '';
+        final startF = startT != null ? ISTHelper.formatTime(DateTime(2022,1,1, startT.hour, startT.minute)) : '';
+        final endF = endT != null ? ISTHelper.formatTime(DateTime(2022,1,1, endT.hour, endT.minute)) : '';
         
         return '$dateStr ($startF - $endF)';
        } catch (e) {
@@ -449,10 +449,10 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
       final start = ISTHelper.parseUTCtoIST(item['start'].toString());
       final end = item['end'] != null ? ISTHelper.parseUTCtoIST(item['end'].toString()) : null;
 
-      String dateRange = '${start.day}/${start.month} ${DateFormat('h:mm a').format(start)}';
+      String dateRange = '${ISTHelper.formatDate(start, omitYear: true)} ${ISTHelper.formatTime(start)}';
 
       if (end != null) {
-        dateRange += ' - ${DateFormat('h:mm a').format(end)}';
+        dateRange += ' - ${ISTHelper.formatTime(end)}';
       } else {
         dateRange += ' (Active)';
       }
@@ -555,7 +555,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
     if (item['type'] == 'time_off') {
        try {
          final date = DateTime.parse(item['date'] ?? item['start'].toString());
-         final formattedDate = DateFormat('MMM d').format(date);
+         final formattedDate = ISTHelper.formatDate(date, omitYear: true);
          
          // Extract duration from subtitle (e.g., "3hrs : reason")
          // Backend returns subtitle as "3hrs : reason" or "duration : reason"
@@ -962,7 +962,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey[600]),
                                   ),
                                   Text(
-                                    DateFormat('MMM d, yyyy h:mm a').format(ISTHelper.parseUTCtoIST(item['createdAt'])),
+                                    ISTHelper.formatDateTime(ISTHelper.parseUTCtoIST(item['createdAt'])),
                                     style: TextStyle(fontSize: 11, color: Colors.grey[700]),
                                   ),
                                 ],
@@ -988,7 +988,7 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey[600]),
                                   ),
                                   Text(
-                                    DateFormat('MMM d, yyyy h:mm a').format(ISTHelper.parseUTCtoIST(item['updatedAt'])),
+                                    ISTHelper.formatDateTime(ISTHelper.parseUTCtoIST(item['updatedAt'])),
                                     style: TextStyle(fontSize: 11, color: Colors.grey[700]),
                                   ),
                                 ],

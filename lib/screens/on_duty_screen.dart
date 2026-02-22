@@ -482,7 +482,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          DateFormat('h:mm a').format(DateTime(2000, 1, 1, _startTime!.hour, _startTime!.minute)),
+                          ISTHelper.formatTime(DateTime(2000, 1, 1, _startTime!.hour, _startTime!.minute)),
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,

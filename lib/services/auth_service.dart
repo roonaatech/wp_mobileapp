@@ -232,9 +232,9 @@ class AuthService with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Fetch application timezone from public settings endpoint
+  /// Fetch application global settings from public settings endpoint
   /// This can be called without authentication
-  static Future<String?> fetchAppTimezone() async {
+  static Future<Map<String, String>?> fetchGlobalSettings() async {
     try {
       final url = AppConfig.settingsPublic;
       final client = _createHttpClient();
@@ -243,14 +243,16 @@ class AuthService with ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        // The API returns { settings: [...], map: {...} }
-        // The map contains key-value pairs like { 'application_timezone': 'America/Chicago' }
-        if (data['map'] != null && data['map']['application_timezone'] != null) {
-          return data['map']['application_timezone'] as String;
+        if (data['map'] != null) {
+          return {
+            'application_timezone': data['map']['application_timezone']?.toString() ?? 'Asia/Kolkata',
+            'application_date_format': data['map']['application_date_format']?.toString() ?? 'MMM DD, YYYY',
+            'application_time_format': data['map']['application_time_format']?.toString() ?? '12h',
+          };
         }
       }
     } catch (error) {
-      print('Error fetching timezone setting: $error');
+      print('Error fetching global settings: $error');
     }
     return null; // Return null if fetch fails, will use default
   }

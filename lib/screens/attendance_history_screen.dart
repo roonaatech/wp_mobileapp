@@ -81,7 +81,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   }
 
   String _formatDateTime(DateTime dt) {
-    return DateFormat('d/M/yyyy h:mm a').format(dt);
+    return ISTHelper.formatDateTime(dt);
   }
 
   String _getApprovalStatus(Map<String, dynamic> item) {

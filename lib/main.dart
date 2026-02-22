@@ -17,17 +17,21 @@ void main() {
     // Initialize timezone helper
     await ISTHelper.initialize();
 
-    // Fetch and update timezone from backend
+    // Fetch and update timezone and format settings from backend
     try {
-      final timezone = await AuthService.fetchAppTimezone();
-      if (timezone != null) {
-        await ISTHelper.setTimezone(timezone);
-        print('Timezone set to: $timezone');
+      final settings = await AuthService.fetchGlobalSettings();
+      if (settings != null) {
+        await ISTHelper.setTimezone(settings['application_timezone']!);
+        await ISTHelper.setFormatSettings(
+          settings['application_date_format']!,
+          settings['application_time_format']!,
+        );
+        print('Settings initialized from backend: ${settings['application_timezone']}');
       } else {
         print('Using default timezone: ${ISTHelper.getTimezoneName()}');
       }
     } catch (e) {
-      print('Error fetching timezone, using default: $e');
+      print('Error fetching settings, using defaults: $e');
     }
 
     // Suppress google_fonts asset loading errors (they'll fallback to system fonts)

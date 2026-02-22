@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../widgets/brand_logo.dart';
 import '../services/auth_service.dart';
 import '../config/app_config.dart';
+import '../utils/ist_helper.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -54,6 +55,22 @@ class _LoginScreenState extends State<LoginScreen> {
         _passwordController.text,
         forceLocal: forceLocal,
       );
+
+      // Refresh application settings (timezone, etc) immediately after login
+      try {
+        final settings = await AuthService.fetchGlobalSettings();
+        if (settings != null) {
+          await ISTHelper.setTimezone(settings['application_timezone']!);
+          await ISTHelper.setFormatSettings(
+            settings['application_date_format']!,
+            settings['application_time_format']!,
+          );
+          print('Settings refreshed after login');
+        }
+      } catch (e) {
+        print('Error refreshing settings after login: $e');
+      }
+
       // Navigation is handled by AuthWrapper in main.dart
     } catch (error) {
       final errorMessage = error.toString();

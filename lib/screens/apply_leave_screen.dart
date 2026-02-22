@@ -85,17 +85,16 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
       if (mounted) {
         final Map<DateTime, String> statusMap = {};
         for (var leave in leaves) {
-          // Skip rejected leaves if you don't want to show them, or show them in red? 
-          // User asked for "pending and approved".
+          // Process only standard leaves for the block-out calendar
+          if (leave['type'] != null && leave['type'] != 'leave') continue;
+          
           if (leave['status'] == 'Rejected') continue;
+          if (leave['start'] == null || leave['end'] == null) continue;
 
           try {
-            // Ensure we handle dates as local to match calendar logic
-            final rawStart = DateTime.parse(leave['start']);
-            final rawEnd = DateTime.parse(leave['end']);
-            
-            final start = rawStart.isUtc ? rawStart.toLocal() : rawStart;
-            final end = rawEnd.isUtc ? rawEnd.toLocal() : rawEnd;
+            // Ensure we handle dates as application timezone to match calendar logic
+            final start = ISTHelper.parseUTCtoIST(leave['start'].toString());
+            final end = ISTHelper.parseUTCtoIST(leave['end'].toString());
             
             final status = leave['status'];
 
@@ -144,8 +143,8 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     // Parse dates (assuming 'days' or direct date strings)
     // The list items from getMyLeaves have 'start' and 'end' as yyyy-MM-dd strings
     try {
-      _startDate = DateTime.parse(leave['start']);
-      _endDate = DateTime.parse(leave['end']);
+      _startDate = ISTHelper.parseUTCtoIST(leave['start']?.toString() ?? '');
+      _endDate = ISTHelper.parseUTCtoIST(leave['end']?.toString() ?? '');
     } catch (e) {
       print('Error parsing dates for edit: $e');
     }
@@ -316,7 +315,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                     children: [
                       Text(
                         _startDate != null && _endDate != null
-                            ? '${_startDate!.day}/${_startDate!.month}/${_startDate!.year} - ${_endDate!.day}/${_endDate!.month}/${_endDate!.year}'
+                            ? '${ISTHelper.formatDate(_startDate!)} - ${ISTHelper.formatDate(_endDate!)}'
                             : 'Select date range',
                         style: const TextStyle(fontSize: 14),
                       ),
@@ -620,17 +619,31 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
       String? overlapMsg;
 
       for (var leave in myLeaves) {
+        // Process only standard leaves for overlap check
+        if (leave['type'] != null && leave['type'] != 'leave') continue;
+        
         // Skip rejected leaves
         if (leave['status'] == 'Rejected') continue;
+        if (leave['start'] == null || leave['end'] == null) continue;
+        
+        // Skip the current leave being edited (to allow changing its dates)
+        if (widget.existingLeave != null && leave['id'] == widget.existingLeave!['id']) continue;
         
         try {
-          final leaveStart = DateTime.parse(leave['start']);
-          final leaveEnd = DateTime.parse(leave['end']);
+          // Use IST timezone parsing to match the app's standard handling
+          final leaveStart = ISTHelper.parseUTCtoIST(leave['start'].toString());
+          final leaveEnd = ISTHelper.parseUTCtoIST(leave['end'].toString());
+
+          // To properly check overlaps, normalize to start of day for comparison
+          final startDay = DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
+          final endDay = DateTime(_endDate!.year, _endDate!.month, _endDate!.day);
+          final existingStartDay = DateTime(leaveStart.year, leaveStart.month, leaveStart.day);
+          final existingEndDay = DateTime(leaveEnd.year, leaveEnd.month, leaveEnd.day);
 
           // Check if date ranges overlap
-          if (!(_endDate!.isBefore(leaveStart) || _startDate!.isAfter(leaveEnd))) {
+          if (!(endDay.isBefore(existingStartDay) || startDay.isAfter(existingEndDay))) {
             hasOverlap = true;
-            overlapMsg = '⚠️ Overlapping leave found: ${leave['title']} from ${leaveStart.day}/${leaveStart.month}/${leaveStart.year} to ${leaveEnd.day}/${leaveEnd.month}/${leaveEnd.year}';
+            overlapMsg = '⚠️ Overlapping leave found: ${leave['title']} from ${ISTHelper.formatDate(leaveStart)} to ${ISTHelper.formatDate(leaveEnd)}';
             break;
           }
         } catch (e) {

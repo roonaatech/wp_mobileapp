@@ -1,17 +1,25 @@
+import 'package:intl/intl.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Utility class for timezone conversions based on application settings
+/// Utility class for timezone conversions and date/time formatting based on application settings
 /// The timezone is fetched from the backend's application_timezone setting
 /// and stored locally. Falls back to 'Asia/Kolkata' if not configured.
 class ISTHelper {
   static const String _timezoneKey = 'app_timezone';
   static const String _defaultTimezone = 'Asia/Kolkata'; // Default fallback
+  
+  static const String _dateFormatKey = 'app_date_format';
+  static const String _timeFormatKey = 'app_time_format';
+
+  static String _dateFormat = 'MMM DD, YYYY';
+  static String _timeFormat = '12h';
+
   static bool _initialized = false;
   static tz.Location? _location;
 
-  /// Initialize timezone database and load saved timezone
+  /// Initialize timezone database and load saved settings
   /// MUST be called once at app startup before using any other methods
   static Future<void> initialize() async {
     if (!_initialized) {
@@ -22,12 +30,28 @@ class ISTHelper {
         final prefs = await SharedPreferences.getInstance();
         final timezoneName = prefs.getString(_timezoneKey) ?? _defaultTimezone;
         _location = tz.getLocation(timezoneName);
+
+        _dateFormat = prefs.getString(_dateFormatKey) ?? 'MMM DD, YYYY';
+        _timeFormat = prefs.getString(_timeFormatKey) ?? '12h';
       } catch (e) {
-        print('Error loading timezone preference, using default: $e');
+        print('Error loading preferences, using default: $e');
         _location = tz.getLocation(_defaultTimezone);
       }
 
       _initialized = true;
+    }
+  }
+
+  /// Update the application format settings (call this when settings change)
+  static Future<void> setFormatSettings(String dateFormat, String timeFormat) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_dateFormatKey, dateFormat);
+      await prefs.setString(_timeFormatKey, timeFormat);
+      _dateFormat = dateFormat;
+      _timeFormat = timeFormat;
+    } catch (e) {
+      print('Error setting format settings: $e');
     }
   }
 
@@ -110,12 +134,41 @@ class ISTHelper {
   // These now use dynamic timezone instead of hardcoded IST
   // ============================================================================
 
-  /// @deprecated Use toAppTimezone instead
-  static DateTime toIST(DateTime utcTime) => toAppTimezone(utcTime);
+  // ============================================================================
+  // Formatting methods based on Global Settings
+  // ============================================================================
 
-  /// @deprecated Use now instead
-  static DateTime nowIST() => now();
+  /// Format date according to application settings
+  static String formatDate(DateTime date, {bool omitYear = false}) {
+    String pattern = 'MMM d, yyyy'; // default "MMM DD, YYYY" equivalent
+    if (_dateFormat == 'DD/MM/YYYY') pattern = 'dd/MM/yyyy';
+    if (_dateFormat == 'MM/DD/YYYY') pattern = 'MM/dd/yyyy';
+    if (_dateFormat == 'YYYY-MM-DD') pattern = 'yyyy-MM-dd';
+    
+    if (omitYear) {
+      if (_dateFormat == 'DD/MM/YYYY' || _dateFormat == 'MM/DD/YYYY') {
+        pattern = 'dd/MM';
+      } else if (_dateFormat == 'YYYY-MM-DD') {
+        pattern = 'MM-dd';
+      } else {
+        pattern = 'MMM d';
+      }
+    }
+    
+    return DateFormat(pattern).format(date);
+  }
 
-  /// @deprecated Use parseUTCtoAppTimezone instead - still works with old name
-  static DateTime parseUTCtoIST(String utcString) => parseUTCtoAppTimezone(utcString);
+  /// Format time according to application settings
+  static String formatTime(DateTime time) {
+    if (_timeFormat == '24h') {
+      return DateFormat('HH:mm').format(time);
+    } else {
+      return DateFormat('h:mm a').format(time);
+    }
+  }
+
+  /// Format date and time according to application settings
+  static String formatDateTime(DateTime dateTime) {
+    return '${formatDate(dateTime)} ${formatTime(dateTime)}';
+  }
 }
