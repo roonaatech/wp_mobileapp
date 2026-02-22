@@ -463,11 +463,13 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                       calendarFormat: CalendarFormat.month,
                       rangeSelectionMode: RangeSelectionMode.toggledOn,
                       enabledDayPredicate: (day) {
-                        // Disable past dates (before today)
+                        // Disable past dates (before today) and Sundays
                         final today = ISTHelper.now();
                         final todayOnly = DateTime(today.year, today.month, today.day);
                         final dayOnly = DateTime(day.year, day.month, day.day);
-                        return !dayOnly.isBefore(todayOnly);
+                        if (dayOnly.isBefore(todayOnly)) return false;
+                        if (day.weekday == DateTime.sunday) return false;
+                        return true;
                       },
                       headerStyle: const HeaderStyle(
                         formatButtonVisible: false,
@@ -491,6 +493,27 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                         focusedDay = focused;
                       },
                       calendarBuilders: CalendarBuilders(
+                        disabledBuilder: (context, day, focusedDay) {
+                          // Style Sundays distinctly among disabled days
+                          if (day.weekday == DateTime.sunday) {
+                            return Container(
+                              margin: const EdgeInsets.all(4),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: Colors.red.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '${day.day}',
+                                style: TextStyle(
+                                  color: Colors.red.withOpacity(0.4),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            );
+                          }
+                          return null; // Use default disabled style for past dates
+                        },
                         defaultBuilder: (context, day, focusedDay) {
                           // Check if day matches existing leave
                           final dateKey = DateTime(day.year, day.month, day.day);
@@ -526,6 +549,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                       children: [
                         _buildLegendItem('Approved', Colors.green.withOpacity(0.3)),
                         _buildLegendItem('Pending', Colors.orange.withOpacity(0.3)),
+                        _buildLegendItem('Sunday', Colors.red.withOpacity(0.15)),
                       ],
                     ),
                   ),

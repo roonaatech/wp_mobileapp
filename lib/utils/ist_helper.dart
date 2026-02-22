@@ -69,10 +69,40 @@ class ISTHelper {
     return tz.TZDateTime.now(_location!);
   }
 
-  /// Parse UTC string and convert to application's configured timezone
-  static DateTime parseUTCtoAppTimezone(String utcString) {
-    final utcTime = DateTime.parse(utcString).toUtc();
-    return toAppTimezone(utcTime);
+  /// Parse a date-time string from the backend.
+  /// Detects if the string is an absolute UTC string (contains 'Z' or 'T')
+  /// or a pre-formatted app-timezone string (naked YYYY-MM-DD HH:mm:ss).
+  static DateTime parseUTCtoAppTimezone(String dateString) {
+    if (dateString.isEmpty) return DateTime.now();
+    
+    // If it contains a timezone indicator, it's absolute UTC
+    if (dateString.contains('Z') || dateString.contains('+')) {
+      final utcTime = DateTime.parse(dateString).toUtc();
+      return toAppTimezone(utcTime);
+    }
+    
+    // Otherwise, treat as "Already in App Timezone" numbers
+    // Construction: "YYYY-MM-DD HH:mm:ss"
+    try {
+      // Dart's DateTime.parse treats naked strings as Local Time.
+      // We want to force it to be treated as numbers matching our target location.
+      final local = DateTime.parse(dateString);
+      // Construct a TZDateTime with the same numbers but in our _location
+      if (_location == null) _location = tz.getLocation(_defaultTimezone);
+      
+      return tz.TZDateTime(
+        _location!,
+        local.year,
+        local.month,
+        local.day,
+        local.hour,
+        local.minute,
+        local.second,
+      );
+    } catch (e) {
+      // Fallback
+      return DateTime.parse(dateString);
+    }
   }
 
   // ============================================================================

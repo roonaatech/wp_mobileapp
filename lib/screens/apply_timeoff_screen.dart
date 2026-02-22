@@ -68,6 +68,10 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
       initialDate: _selectedDate ?? ISTHelper.now(),
       firstDate: ISTHelper.now(), // Can't apply for past dates usually? Or maybe allow it?
       lastDate: ISTHelper.now().add(const Duration(days: 90)),
+      selectableDayPredicate: (DateTime day) {
+        // Disable Sundays
+        return day.weekday != DateTime.sunday;
+      },
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -82,6 +86,12 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
       },
     );
     if (picked != null && picked != _selectedDate) {
+      if (picked.weekday == DateTime.sunday) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sundays are not allowed for time-off requests')),
+        );
+        return;
+      }
       setState(() {
         _selectedDate = picked;
       });

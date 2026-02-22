@@ -55,23 +55,22 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     DateTime startTime;
     DateTime? endTime;
 
-                            if (isOnDuty) ...[
-                              Text(
-                                'Client: ${item['client_name'] ?? 'N/A'}',
-                                style: TextStyle(color: Colors.grey.shade700, fontSize: 13, fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Location: ${item['location_details'] ?? item['location'] ?? 'N/A'}',
-                                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Purpose: ${item['purpose'] ?? 'N/A'}',
-                                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-                              ),
-                              const SizedBox(height: 4),
-                            ],
+    if (isOnDuty) {
+      startTime = ISTHelper.parseUTCtoIST(item['start_time']);
+      if (item['end_time'] != null) {
+        endTime = ISTHelper.parseUTCtoIST(item['end_time']);
+      }
+    } else {
+      startTime = ISTHelper.parseUTCtoIST(item['check_in_time']);
+      if (item['check_out_time'] != null) {
+        endTime = ISTHelper.parseUTCtoIST(item['check_out_time']);
+      }
+    }
+
+    final now = ISTHelper.nowIST();
+    final effectiveEndTime = endTime ?? now;
+    final duration = effectiveEndTime.difference(startTime);
+    final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     
     if (hours > 0) {
