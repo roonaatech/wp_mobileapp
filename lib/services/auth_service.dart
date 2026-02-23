@@ -83,11 +83,33 @@ class AuthService with ChangeNotifier {
     final userDataString = prefs.getString('userData');
     if (userDataString != null) {
       final userData = json.decode(userDataString);
-      _externalUserId = userData['externalUserId'];
+      final rawExtId = userData['externalUserId'];
+      if (rawExtId != null) {
+        if (rawExtId is int) {
+          _externalUserId = rawExtId;
+        } else {
+          _externalUserId = int.tryParse(rawExtId.toString());
+        }
+      }
     }
 
-    notifyListeners();
-    return true;
+      notifyListeners();
+
+      // Refresh settings using the token just in case public fetch failed or migration not run
+      try {
+        final settings = await fetchGlobalSettings(token: _token);
+        if (settings != null) {
+          await ISTHelper.setTimezone(settings['application_timezone']!);
+          await ISTHelper.setFormatSettings(
+            settings['application_date_format']!,
+            settings['application_time_format']!,
+          );
+        }
+      } catch (e) {
+        print('Error refreshing settings during auto-login: $e');
+      }
+
+      return true;
   }
 
   String? get _baseUrl {
@@ -140,11 +162,11 @@ class AuthService with ChangeNotifier {
       // Handle App Update Required (HTTP 426 Upgrade Required)
       if (response.statusCode == 426 && responseData['updateRequired'] == true) {
         throw AppUpdateRequiredException(
-          message: responseData['message'] ?? 'App update required.',
-          currentVersion: responseData['currentVersion'] ?? appVersion,
-          latestVersion: responseData['latestVersion'] ?? 'Unknown',
-          releaseNotes: responseData['releaseNotes'],
-          downloadUrl: '${AppConfig.apiBaseUrl}${responseData['downloadUrl'] ?? '/api/apk/download/latest'}',
+          message: responseData['message']?.toString() ?? 'App update required.',
+          currentVersion: (responseData['currentVersion'] ?? appVersion).toString(),
+          latestVersion: (responseData['latestVersion'] ?? 'Unknown').toString(),
+          releaseNotes: responseData['releaseNotes']?.toString(),
+          downloadUrl: '${AppConfig.apiBaseUrl}${responseData['downloadUrl']?.toString() ?? '/api/apk/download/latest'}',
         );
       }
       
@@ -174,7 +196,17 @@ class AuthService with ChangeNotifier {
       _token = responseData['accessToken'];
       _userId = responseData['id'].toString();
       _userName = '${responseData['firstname'] ?? ''} ${responseData['lastname'] ?? ''}'.trim();
-      _externalUserId = responseData['userid']; // Can be null for WorkPulse-only users
+      
+      final rawExtId = responseData['userid'];
+      if (rawExtId != null) {
+        if (rawExtId is int) {
+          _externalUserId = rawExtId;
+        } else {
+          _externalUserId = int.tryParse(rawExtId.toString());
+        }
+      } else {
+        _externalUserId = null;
+      }
 
       final prefs = await SharedPreferences.getInstance();
       final userData = json.encode({
@@ -232,14 +264,22 @@ class AuthService with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Fetch application global settings from public settings endpoint
-  /// This can be called without authentication
-  static Future<Map<String, String>?> fetchGlobalSettings() async {
+  /// Fetch application global settings from settings endpoint
+  /// [token] is optional; if provided, it uses the authenticated settings endpoint 
+  /// which may return more settings or work even if public access is restricted.
+  static Future<Map<String, String>?> fetchGlobalSettings({String? token}) async {
     try {
-      final url = AppConfig.settingsPublic;
+      // Use authenticated endpoint if token is provided, otherwise use public
+      final url = token != null 
+          ? '${AppConfig.apiBaseUrl}/api/settings'
+          : AppConfig.settingsPublic;
+          
       final client = _createHttpClient();
 
-      final response = await client.get(Uri.parse(url));
+      final response = await client.get(
+        Uri.parse(url),
+        headers: token != null ? {'x-access-token': token} : null,
+      );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -252,8 +292,8 @@ class AuthService with ChangeNotifier {
         }
       }
     } catch (error) {
-      print('Error fetching global settings: $error');
+      print('Error fetching global settings (authenticated: ${token != null}): $error');
     }
-    return null; // Return null if fetch fails, will use default
+    return null; 
   }
 }

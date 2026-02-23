@@ -97,7 +97,7 @@ class ISTHelper {
   /// Detects if the string is an absolute UTC string (contains 'Z' or 'T')
   /// or a pre-formatted app-timezone string (naked YYYY-MM-DD HH:mm:ss).
   static DateTime parseUTCtoAppTimezone(String dateString) {
-    if (dateString.isEmpty) return DateTime.now();
+    if (dateString.isEmpty) return now();
     
     // If it contains a timezone indicator, it's absolute UTC
     if (dateString.contains('Z') || dateString.contains('+')) {
@@ -133,6 +133,9 @@ class ISTHelper {
   // Legacy method names for backward compatibility
   // These now use dynamic timezone instead of hardcoded IST
   // ============================================================================
+  static DateTime parseUTCtoIST(String dateString) => parseUTCtoAppTimezone(dateString);
+  static DateTime nowIST() => now();
+  static DateTime toIST(DateTime utcTime) => toAppTimezone(utcTime);
 
   // ============================================================================
   // Formatting methods based on Global Settings
@@ -146,8 +149,10 @@ class ISTHelper {
     if (_dateFormat == 'YYYY-MM-DD') pattern = 'yyyy-MM-dd';
     
     if (omitYear) {
-      if (_dateFormat == 'DD/MM/YYYY' || _dateFormat == 'MM/DD/YYYY') {
+      if (_dateFormat == 'DD/MM/YYYY') {
         pattern = 'dd/MM';
+      } else if (_dateFormat == 'MM/DD/YYYY') {
+        pattern = 'MM/dd';
       } else if (_dateFormat == 'YYYY-MM-DD') {
         pattern = 'MM-dd';
       } else {

@@ -477,7 +477,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
                     Column(
                       children: [
                         Text(
-                          'Started at (IST)',
+                          'Started at (${ISTHelper.getTimezoneName().split('/').last})',
                           style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
                         ),
                         const SizedBox(height: 4),
