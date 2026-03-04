@@ -58,6 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Refresh application settings (timezone, etc) immediately after login
       try {
+        final authService = Provider.of<AuthService>(context, listen: false);
         final settings = await AuthService.fetchGlobalSettings(token: authService.token);
         if (settings != null) {
           await ISTHelper.setTimezone(settings['application_timezone']!);
