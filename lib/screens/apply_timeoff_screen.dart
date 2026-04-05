@@ -63,11 +63,19 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
   }
 
   Future<void> _selectDate() async {
+    final DateTime now = ISTHelper.now();
+    DateTime initialDate = _selectedDate ?? now;
+    
+    // showDatePicker fails if initialDate is disabled by selectableDayPredicate (Sunday)
+    if (initialDate.weekday == DateTime.sunday) {
+      initialDate = initialDate.add(const Duration(days: 1));
+    }
+
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate ?? ISTHelper.now(),
-      firstDate: ISTHelper.now(), // Can't apply for past dates usually? Or maybe allow it?
-      lastDate: ISTHelper.now().add(const Duration(days: 90)),
+      initialDate: initialDate,
+      firstDate: now, // Can't apply for past dates usually? Or maybe allow it?
+      lastDate: now.add(const Duration(days: 90)),
       selectableDayPredicate: (DateTime day) {
         // Disable Sundays
         return day.weekday != DateTime.sunday;
