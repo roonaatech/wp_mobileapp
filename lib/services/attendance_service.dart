@@ -23,7 +23,7 @@ class AttendanceService with ChangeNotifier {
     _client = _createHttpClient();
   }
 
-  Future<void> applyLeave(String leaveType, DateTime startDate, DateTime endDate, String reason) async {
+  Future<void> applyLeave(String leaveType, DateTime startDate, DateTime endDate, String reason, {bool isHalfDay = false}) async {
     final url = AppConfig.leaveApply;
     final DateFormat formatter = DateFormat('yyyy-MM-dd');
 
@@ -39,6 +39,7 @@ class AttendanceService with ChangeNotifier {
           'start_date': formatter.format(startDate),
           'end_date': formatter.format(endDate),
           'reason': reason,
+          'is_half_day': isHalfDay,
         }),
       );
 
@@ -274,7 +275,7 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
-  Future<void> updateLeave(int id, String leaveType, DateTime startDate, DateTime endDate, String reason) async {
+  Future<void> updateLeave(int id, String leaveType, DateTime startDate, DateTime endDate, String reason, {bool isHalfDay = false}) async {
     final url = '${AppConfig.leaveDetail}/$id';
     final DateFormat formatter = DateFormat('yyyy-MM-dd');
 
@@ -290,6 +291,7 @@ class AttendanceService with ChangeNotifier {
           'start_date': formatter.format(startDate),
           'end_date': formatter.format(endDate),
           'reason': reason,
+          'is_half_day': isHalfDay,
         }),
       );
 

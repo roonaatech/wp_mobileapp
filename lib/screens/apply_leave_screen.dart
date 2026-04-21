@@ -32,6 +32,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   int? _selectedLeaveBalance = 0;
   Map<DateTime, String> _existingLeavesStatus = {};
   bool _hasLoadedData = false;
+  bool _isHalfDay = false;
 
   // Calculate leave days excluding Sundays (Sunday = 0 in Dart)
   int _calculateLeaveDays(DateTime startDate, DateTime endDate) {
@@ -139,6 +140,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     final leave = widget.existingLeave!;
     _leaveType = leave['title'];
     _reasonController.text = leave['subtitle'] ?? '';
+    _isHalfDay = leave['is_half_day'] == 1 || leave['is_half_day'] == true;
     
     // Parse dates (assuming 'days' or direct date strings)
     // The list items from getMyLeaves have 'start' and 'end' as yyyy-MM-dd strings
@@ -326,7 +328,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Total: ${_calculateLeaveDays(_startDate!, _endDate!)} day(s) (Sundays excluded)',
+                                'Total: ${_calculateLeaveDays(_startDate!, _endDate!) - (_isHalfDay ? 0.5 : 0)} day(s) (Sundays excluded)',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Color(0xFF3B82F6),
@@ -334,7 +336,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                                 ),
                               ),
                               // Removed "Allowed: xx days" display
-                              if (_selectedLeaveAllowedDays != null && _calculateLeaveDays(_startDate!, _endDate!) > _selectedLeaveAllowedDays! && !(_leaveType?.toLowerCase().contains('loss of pay') ?? false))
+                              if (_selectedLeaveAllowedDays != null && (_calculateLeaveDays(_startDate!, _endDate!) - (_isHalfDay ? 0.5 : 0)) > _selectedLeaveAllowedDays! && !(_leaveType?.toLowerCase().contains('loss of pay') ?? false))
                                 Padding(
                                   padding: const EdgeInsets.only(top: 8.0),
                                   child: Container(
@@ -381,6 +383,21 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                   ),
                 ),
               ),
+              if (_startDate != null && _endDate != null) ...[
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  title: const Text('Half Day Leave', style: TextStyle(fontSize: 14)),
+                  subtitle: const Text('Reduces total leave duration by 0.5 days', style: TextStyle(fontSize: 12)),
+                  value: _isHalfDay,
+                  onChanged: (bool value) {
+                    setState(() {
+                      _isHalfDay = value;
+                    });
+                  },
+                  contentPadding: EdgeInsets.zero,
+                  activeColor: const Color(0xFF3B82F6),
+                ),
+              ],
               const SizedBox(height: 16),
               TextFormField(
                 controller: _reasonController,
@@ -672,7 +689,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     if (_leaveType?.toLowerCase().contains('loss of pay') ?? false) {
       return false;
     }
-    final selectedDays = _calculateLeaveDays(_startDate!, _endDate!);
+    final selectedDays = _calculateLeaveDays(_startDate!, _endDate!) - (_isHalfDay ? 0.5 : 0);
     return selectedDays > _selectedLeaveAllowedDays!;
   }
 
@@ -696,6 +713,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
           _startDate!,
           _endDate!,
           _reasonController.text,
+          isHalfDay: _isHalfDay,
         );
       } else {
         await Provider.of<AttendanceService>(context, listen: false).applyLeave(
@@ -703,6 +721,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
           _startDate!,
           _endDate!,
           _reasonController.text,
+          isHalfDay: _isHalfDay,
         );
       }
       
@@ -721,6 +740,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
           _startDate = null;
           _endDate = null;
           _leaveType = null;
+          _isHalfDay = false;
         });
         // Notify parent
         widget.onSuccess?.call();
