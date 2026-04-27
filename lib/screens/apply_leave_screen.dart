@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../services/attendance_service.dart';
+import '../services/auth_service.dart';
 import '../utils/dialogs.dart';
 import '../utils/ist_helper.dart';
 
@@ -26,28 +28,42 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   List<dynamic> _leaveTypes = [];
   bool _fetchingTypes = true;
   int? _selectedLeaveAllowedDays;
-  bool _hasOverlappingLeave = false;
-  String? _overlapMessage;
+  int _leavePastDaysAllowed = 0;
+  DateTime? _minLeaveDate;
   Map<String, dynamic> _userLeaveBalance = {};
   int? _selectedLeaveBalance = 0;
   Map<DateTime, String> _existingLeavesStatus = {};
   bool _hasLoadedData = false;
   bool _isHalfDay = false;
 
-  // Calculate leave days excluding Sundays (Sunday = 0 in Dart)
-  int _calculateLeaveDays(DateTime startDate, DateTime endDate) {
+  // Calculate leave days excluding Sundays and any dates in excludeStatusMap (Approved/Pending)
+  int _calculateLeaveDays(DateTime startDate, DateTime endDate, {Map<DateTime, String>? excludeStatusMap}) {
     if (startDate.isAfter(endDate)) return 0;
     int count = 0;
     DateTime current = startDate;
     while (!current.isAfter(endDate)) {
-      // In Dart: Monday=1, Tuesday=2, ..., Sunday=7
-      // Exclude Sunday (7)
       if (current.weekday != DateTime.sunday) {
-        count++;
+        final dateKey = DateTime(current.year, current.month, current.day);
+        if (excludeStatusMap == null || !excludeStatusMap.containsKey(dateKey)) {
+          count++;
+        }
       }
       current = current.add(const Duration(days: 1));
     }
     return count;
+  }
+
+  DateTime _computeMinLeaveDate(int pastDaysAllowed) {
+    final today = ISTHelper.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    if (pastDaysAllowed <= 0) return todayOnly;
+    DateTime cursor = todayOnly;
+    int workingDaysBack = 0;
+    while (workingDaysBack < pastDaysAllowed) {
+      cursor = cursor.subtract(const Duration(days: 1));
+      if (cursor.weekday != DateTime.sunday) workingDaysBack++;
+    }
+    return cursor;
   }
 
   @override
@@ -76,8 +92,47 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
       _fetchLeaveTypes(),
       _fetchUserLeaveBalance(),
       _fetchMyLeaves(),
+      _fetchLeavePastDaysAllowed(),
     ]);
     print('[ApplyLeave] Data loaded. Leave types count: ${_leaveTypes.length}');
+  }
+
+  Future<void> _fetchLeavePastDaysAllowed() async {
+    try {
+      // Fetch fresh from API so admin setting changes take effect immediately
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final settings = await AuthService.fetchGlobalSettings(token: authService.token);
+      int val = 0;
+      if (settings != null) {
+        val = int.tryParse(settings['leave_past_days_allowed'] ?? '0') ?? 0;
+        // Keep SharedPreferences in sync with the latest value
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('leave_past_days_allowed', val.toString());
+      } else {
+        // Fallback to cached value if API is unreachable
+        final prefs = await SharedPreferences.getInstance();
+        val = int.tryParse(prefs.getString('leave_past_days_allowed') ?? '0') ?? 0;
+      }
+      if (mounted) {
+        setState(() {
+          _leavePastDaysAllowed = val;
+          _minLeaveDate = _computeMinLeaveDate(val);
+        });
+      }
+    } catch (e) {
+      print('Failed to load leave_past_days_allowed: $e');
+      // Fallback to cached value
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final val = int.tryParse(prefs.getString('leave_past_days_allowed') ?? '0') ?? 0;
+        if (mounted) {
+          setState(() {
+            _leavePastDaysAllowed = val;
+            _minLeaveDate = _computeMinLeaveDate(val);
+          });
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> _fetchMyLeaves() async {
@@ -328,7 +383,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Total: ${_calculateLeaveDays(_startDate!, _endDate!) - (_isHalfDay ? 0.5 : 0)} day(s) (Sundays excluded)',
+                                'Total: ${_calculateLeaveDays(_startDate!, _endDate!, excludeStatusMap: _existingLeavesStatus) - (_isHalfDay ? 0.5 : 0)} day(s) (Sundays excluded)',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Color(0xFF3B82F6),
@@ -336,7 +391,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                                 ),
                               ),
                               // Removed "Allowed: xx days" display
-                              if (_selectedLeaveAllowedDays != null && (_calculateLeaveDays(_startDate!, _endDate!) - (_isHalfDay ? 0.5 : 0)) > _selectedLeaveAllowedDays! && !(_leaveType?.toLowerCase().contains('loss of pay') ?? false))
+                              if (_selectedLeaveAllowedDays != null && (_calculateLeaveDays(_startDate!, _endDate!, excludeStatusMap: _existingLeavesStatus) - (_isHalfDay ? 0.5 : 0)) > _selectedLeaveAllowedDays! && !(_leaveType?.toLowerCase().contains('loss of pay') ?? false))
                                 Padding(
                                   padding: const EdgeInsets.only(top: 8.0),
                                   child: Container(
@@ -348,26 +403,6 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                                     ),
                                     child: Text(
                                       '⚠️ Your leave request exceeds the available balance. Please contact your manager to discuss this leave request.',
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFFC1272D),
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              if (_hasOverlappingLeave && _overlapMessage != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 8.0),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFEEBEE),
-                                      border: Border.all(color: const Color(0xFFC1272D)),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      _overlapMessage!,
                                       style: const TextStyle(
                                         fontSize: 11,
                                         color: Color(0xFFC1272D),
@@ -412,7 +447,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: (_isLoading || _isExceedingLimit() || _hasOverlappingLeave) ? null : _submitLeave,
+                onPressed: (_isLoading || _isExceedingLimit()) ? null : _submitLeave,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
@@ -470,7 +505,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                       ),
                     ),
                     TableCalendar(
-                      firstDay: ISTHelper.now(),
+                      firstDay: _minLeaveDate ?? ISTHelper.now(),
                       lastDay: ISTHelper.now().add(const Duration(days: 365)),
                       focusedDay: focusedDay,
                       selectedDayPredicate: (day) => false, // We use range selection
@@ -479,11 +514,9 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                       calendarFormat: CalendarFormat.month,
                       rangeSelectionMode: RangeSelectionMode.toggledOn,
                       enabledDayPredicate: (day) {
-                        // Disable past dates (before today) and Sundays
-                        final today = ISTHelper.now();
-                        final todayOnly = DateTime(today.year, today.month, today.day);
+                        final minDate = _minLeaveDate ?? DateTime(ISTHelper.now().year, ISTHelper.now().month, ISTHelper.now().day);
                         final dayOnly = DateTime(day.year, day.month, day.day);
-                        if (dayOnly.isBefore(todayOnly)) return false;
+                        if (dayOnly.isBefore(minDate)) return false;
                         if (day.weekday == DateTime.sunday) return false;
                         return true;
                       },
@@ -602,7 +635,6 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
           _startDate = pickedRange.start;
           _endDate = pickedRange.end;
         });
-        _checkForOverlappingLeaves();
       }
     });
   }
@@ -620,67 +652,6 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     );
   }
 
-  Future<void> _checkForOverlappingLeaves() async {
-    if (_startDate == null || _endDate == null) {
-      setState(() {
-        _hasOverlappingLeave = false;
-        _overlapMessage = null;
-      });
-      return;
-    }
-
-    try {
-      final myLeaves = await Provider.of<AttendanceService>(context, listen: false).getMyLeaves();
-      
-      bool hasOverlap = false;
-      String? overlapMsg;
-
-      for (var leave in myLeaves) {
-        // Process only standard leaves for overlap check
-        if (leave['type'] != null && leave['type'] != 'leave') continue;
-        
-        // Skip rejected leaves
-        if (leave['status'] == 'Rejected') continue;
-        if (leave['start'] == null || leave['end'] == null) continue;
-        
-        // Skip the current leave being edited (to allow changing its dates)
-        if (widget.existingLeave != null && leave['id'] == widget.existingLeave!['id']) continue;
-        
-        try {
-          // Use IST timezone parsing to match the app's standard handling
-          final leaveStart = ISTHelper.parseUTCtoIST(leave['start'].toString());
-          final leaveEnd = ISTHelper.parseUTCtoIST(leave['end'].toString());
-
-          // To properly check overlaps, normalize to start of day for comparison
-          final startDay = DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
-          final endDay = DateTime(_endDate!.year, _endDate!.month, _endDate!.day);
-          final existingStartDay = DateTime(leaveStart.year, leaveStart.month, leaveStart.day);
-          final existingEndDay = DateTime(leaveEnd.year, leaveEnd.month, leaveEnd.day);
-
-          // Check if date ranges overlap
-          if (!(endDay.isBefore(existingStartDay) || startDay.isAfter(existingEndDay))) {
-            hasOverlap = true;
-            overlapMsg = '⚠️ Overlapping leave found: ${leave['title']} from ${ISTHelper.formatDate(leaveStart)} to ${ISTHelper.formatDate(leaveEnd)}';
-            break;
-          }
-        } catch (e) {
-          // Skip if date parsing fails
-          continue;
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _hasOverlappingLeave = hasOverlap;
-          _overlapMessage = overlapMsg;
-        });
-      }
-    } catch (e) {
-      // Silently fail - don't block UI if overlap check fails
-      print('Error checking for overlapping leaves: $e');
-    }
-  }
-
   bool _isExceedingLimit() {
     if (_startDate == null || _endDate == null || _selectedLeaveAllowedDays == null) {
       return false;
@@ -689,7 +660,9 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     if (_leaveType?.toLowerCase().contains('loss of pay') ?? false) {
       return false;
     }
-    final selectedDays = _calculateLeaveDays(_startDate!, _endDate!) - (_isHalfDay ? 0.5 : 0);
+    // Treat 0 or negative as unlimited (no restriction)
+    if (_selectedLeaveAllowedDays! <= 0) return false;
+    final selectedDays = _calculateLeaveDays(_startDate!, _endDate!, excludeStatusMap: _existingLeavesStatus) - (_isHalfDay ? 0.5 : 0);
     return selectedDays > _selectedLeaveAllowedDays!;
   }
 

@@ -105,6 +105,8 @@ class AuthService with ChangeNotifier {
             settings['application_date_format']!,
             settings['application_time_format']!,
           );
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('leave_past_days_allowed', settings['leave_past_days_allowed'] ?? '0');
         }
       } catch (e) {
         print('Error refreshing settings during auto-login: $e');
@@ -219,7 +221,22 @@ class AuthService with ChangeNotifier {
       prefs.setString('userData', userData);
       prefs.setString('token', _token!);
       prefs.setString('userId', _userId!);
-      
+
+      // Fetch and store global settings immediately after login
+      try {
+        final settings = await fetchGlobalSettings(token: _token);
+        if (settings != null) {
+          await ISTHelper.setTimezone(settings['application_timezone']!);
+          await ISTHelper.setFormatSettings(
+            settings['application_date_format']!,
+            settings['application_time_format']!,
+          );
+          await prefs.setString('leave_past_days_allowed', settings['leave_past_days_allowed'] ?? '0');
+        }
+      } catch (e) {
+        print('Error fetching settings during login: $e');
+      }
+
       // Log activity
       await ActivityLogger.logLogin(_userName ?? 'User');
       
@@ -289,6 +306,7 @@ class AuthService with ChangeNotifier {
             'application_timezone': data['map']['application_timezone']?.toString() ?? 'Asia/Kolkata',
             'application_date_format': data['map']['application_date_format']?.toString() ?? 'MMM DD, YYYY',
             'application_time_format': data['map']['application_time_format']?.toString() ?? '12h',
+            'leave_past_days_allowed': data['map']['leave_past_days_allowed']?.toString() ?? '0',
           };
         }
       }
