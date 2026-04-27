@@ -72,3 +72,4 @@ macos/Podfile.lock
 
 # Environment variables
 .env
+*.lock
