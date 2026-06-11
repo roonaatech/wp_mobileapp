@@ -109,6 +109,9 @@ class AuthWrapper extends StatelessWidget {
     return Consumer<AuthService>(
       builder: (ctx, authService, _) {
         if (authService.isAuth) {
+          if (authService.mustChangePassword) {
+            return const ChangePasswordScreen(isMandatory: true);
+          }
           return const HomeScreen();
         } else {
           return const LoginScreen();

@@ -448,7 +448,7 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
-  Future<void> endOnDuty() async {
+  Future<void> endOnDuty(String endLocation) async {
     final url = AppConfig.onDutyEnd;
     try {
       // Get current location
@@ -483,6 +483,7 @@ class AttendanceService with ChangeNotifier {
           'x-access-token': token!,
         },
         body: json.encode({
+          'end_location': endLocation,
           'latitude': position?.latitude.toString() ?? '0.0',
           'longitude': position?.longitude.toString() ?? '0.0',
         }),
@@ -519,7 +520,7 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
-  Future<void> updateOnDutyDetails(int id, String clientName, String location, String purpose) async {
+  Future<void> updateOnDutyDetails(int id, String clientName, String location, String purpose, String endLocation) async {
     final url = '${AppConfig.onDutyDetail}/$id';
     try {
       final response = await _client.put(
@@ -532,6 +533,7 @@ class AttendanceService with ChangeNotifier {
           'client_name': clientName,
           'location': location,
           'purpose': purpose,
+          'end_location': endLocation,
         }),
       );
 

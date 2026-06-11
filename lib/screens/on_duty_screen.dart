@@ -20,6 +20,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
   final _clientController = TextEditingController();
   final _locationController = TextEditingController();
   final _purposeController = TextEditingController();
+  final _endLocationController = TextEditingController();
   bool _isLoading = false;
   bool _isOnDuty = false;
   int? _activeOnDutyId;
@@ -53,6 +54,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
     _clientController.clear();
     _locationController.clear();
     _purposeController.clear();
+    _endLocationController.clear();
     _startTime = null;
     _isOnDuty = false;
     _activeOnDutyId = null;
@@ -60,39 +62,25 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
 
   void _initializeForEdit() {
     final log = widget.existingLog!;
-    // Parse title "On-Duty: ClientName" logic if needed, or get raw data?
-    // The list item has 'title': 'On-Duty: ClientName', 'subtitle': 'Location - Purpose'
-    
-    // We need to parse strictly or better, if the API returned raw data in a hidden field.
-    // Normalized data in getMyLeaves:
-    // title: `On-Duty: ${l.client_name}`,
-    // subtitle: `${l.location} - ${l.purpose}`,
-    
-    // This is lossy! "Location - Purpose" might be ambiguous if location has " - ".
-    // Ideally, I should pass raw fields.
-    // But for now receiving normalized data.
-    // I made a mistake in backend normalization design if I want to edit easily.
-    // However, I can try to parse or just pre-fill what I can.
-    
-    // WAIT! In Step 923 (Leave Controller), I see:
-    // title: `On-Duty: ${l.client_name}`
-    // subtitle: `${l.location} - ${l.purpose}`
-    
-    // I can try to split subtitle by " - ".
-    // Or I can update `leave.controller.js` to send raw fields too?
-    // It sends `id`, `status` etc.
-    
-    String title = log['title'] ?? '';
-    if (title.startsWith('On-Duty: ')) {
-      _clientController.text = title.substring(9);
-    }
-    
-    String subtitle = log['subtitle'] ?? '';
-    List<String> parts = subtitle.split(' - ');
-    if (parts.isNotEmpty) {
-      _locationController.text = parts[0];
-      if (parts.length > 1) {
-        _purposeController.text = parts.sublist(1).join(' - ');
+    _clientController.text = log['client_name'] ?? (log['title']?.startsWith('On-Duty: ') == true ? log['title'].substring(9) : '');
+    _locationController.text = log['location'] ?? '';
+    _endLocationController.text = log['end_location'] ?? '';
+    _purposeController.text = log['purpose'] ?? '';
+    if (_locationController.text.isEmpty && log['subtitle'] != null) {
+      String subtitle = log['subtitle'] ?? '';
+      List<String> parts = subtitle.split(' - ');
+      if (parts.isNotEmpty) {
+        String locationPart = parts[0];
+        if (locationPart.contains(' to ')) {
+          List<String> locs = locationPart.split(' to ');
+          _locationController.text = locs[0];
+          _endLocationController.text = locs.sublist(1).join(' to ');
+        } else {
+          _locationController.text = locationPart;
+        }
+        if (parts.length > 1) {
+          _purposeController.text = parts.sublist(1).join(' - ');
+        }
       }
     }
   }
@@ -107,6 +95,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
         _clientController.text,
         _locationController.text,
         _purposeController.text,
+        _endLocationController.text,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -167,9 +156,13 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
   }
 
   Future<void> _endOnDuty() async {
+    if (_endLocationController.text.trim().isEmpty) {
+      showErrorDialog(context, 'Please enter End Location');
+      return;
+    }
     setState(() => _isLoading = true);
     try {
-      await Provider.of<AttendanceService>(context, listen: false).endOnDuty();
+      await Provider.of<AttendanceService>(context, listen: false).endOnDuty(_endLocationController.text.trim());
       setState(() {
         _isOnDuty = false;
         _startTime = null;
@@ -265,7 +258,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
           TextFormField(
             controller: _locationController,
             decoration: InputDecoration(
-              labelText: 'Location',
+              labelText: 'Start Location',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -274,10 +267,29 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
               fillColor: Colors.grey.shade50,
             ),
             validator: (value) {
-              if (value == null || value.isEmpty) return 'Please enter location';
+              if (value == null || value.isEmpty) return 'Please enter start location';
               return null;
             },
           ),
+          if (widget.existingLog != null) ...[
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _endLocationController,
+              decoration: InputDecoration(
+                labelText: 'End Location',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                prefixIcon: const Icon(Icons.flag, color: Color(0xFF3B82F6)),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) return 'Please enter end location';
+                return null;
+              },
+            ),
+          ],
           const SizedBox(height: 16),
           TextFormField(
             controller: _purposeController,
@@ -404,7 +416,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Location',
+                                'Start Location',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.white.withOpacity(0.7),
@@ -526,6 +538,22 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
           const SizedBox(height: 24),
         ],
         
+        // End Location Input
+        TextFormField(
+          controller: _endLocationController,
+          decoration: InputDecoration(
+            labelText: 'End Location',
+            hintText: 'Enter end location to complete visit',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            prefixIcon: const Icon(Icons.flag, color: Color(0xFF3B82F6)),
+            filled: true,
+            fillColor: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 16),
+        
         // End Button
         ElevatedButton(
           onPressed: _isLoading ? null : _endOnDuty,
@@ -563,6 +591,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
     _clientController.dispose();
     _locationController.dispose();
     _purposeController.dispose();
+    _endLocationController.dispose();
     super.dispose();
   }
 }

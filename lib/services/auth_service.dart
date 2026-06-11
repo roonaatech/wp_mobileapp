@@ -54,6 +54,11 @@ class AuthService with ChangeNotifier {
   String? _userId;
   String? _userName;
   int? _externalUserId; // userid from backend (null = WorkPulse-only user)
+  bool _mustChangePassword = false;
+
+  bool get mustChangePassword {
+    return _mustChangePassword;
+  }
 
   bool get isAuth {
     return _token != null;
@@ -92,6 +97,7 @@ class AuthService with ChangeNotifier {
           _externalUserId = int.tryParse(rawExtId.toString());
         }
       }
+      _mustChangePassword = userData['mustChangePassword'] ?? false;
     }
 
       notifyListeners();
@@ -199,6 +205,7 @@ class AuthService with ChangeNotifier {
       _token = responseData['accessToken'];
       _userId = responseData['id'].toString();
       _userName = '${responseData['firstname'] ?? ''} ${responseData['lastname'] ?? ''}'.trim();
+      _mustChangePassword = responseData['mustChangePassword'] ?? false;
       
       final rawExtId = responseData['userid'];
       if (rawExtId != null) {
@@ -217,6 +224,7 @@ class AuthService with ChangeNotifier {
         'userId': _userId,
         'userName': _userName,
         'externalUserId': _externalUserId,
+        'mustChangePassword': _mustChangePassword,
       });
       prefs.setString('userData', userData);
       prefs.setString('token', _token!);
@@ -255,6 +263,7 @@ class AuthService with ChangeNotifier {
     _userId = null;
     _userName = null;
     _externalUserId = null;
+    _mustChangePassword = false;
     
     final prefs = await SharedPreferences.getInstance();
     prefs.remove('userData');
@@ -279,6 +288,22 @@ class AuthService with ChangeNotifier {
     // Log activity via mobile logger
     await ActivityLogger.logLogout(userName);
 
+    notifyListeners();
+  }
+
+  void setMustChangePassword(bool value) async {
+    _mustChangePassword = value;
+    final prefs = await SharedPreferences.getInstance();
+    final userDataString = prefs.getString('userData');
+    if (userDataString != null) {
+      try {
+        final userData = json.decode(userDataString) as Map<String, dynamic>;
+        userData['mustChangePassword'] = value;
+        await prefs.setString('userData', json.encode(userData));
+      } catch (e) {
+        print('Error updating mustChangePassword in SharedPreferences: $e');
+      }
+    }
     notifyListeners();
   }
 

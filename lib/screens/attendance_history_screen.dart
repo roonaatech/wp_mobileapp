@@ -117,19 +117,67 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   }
 
   Future<void> _completeOnDuty(int id) async {
-    setState(() => _processingItemId = id);
-    try {
-      final service = Provider.of<AttendanceService>(context, listen: false);
-      await service.endOnDuty();
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('On-duty visit completed!')),
-      );
-      
-      _loadHistory();
-    } catch (error) {
-      showErrorDialog(context, 'Failed to complete on-duty: $error');
-      setState(() => _processingItemId = null);
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('End On-Duty Visit'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Please enter the End Location:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'End Location',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.flag),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (controller.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('End Location is required')),
+                );
+                return;
+              }
+              Navigator.of(context).pop(true);
+            },
+            child: const Text('Complete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() => _processingItemId = id);
+      try {
+        final service = Provider.of<AttendanceService>(context, listen: false);
+        await service.endOnDuty(controller.text.trim());
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('On-duty visit completed!')),
+        );
+        
+        _loadHistory();
+      } catch (error) {
+        showErrorDialog(context, 'Failed to complete on-duty: $error');
+      } finally {
+        if (mounted) {
+          setState(() => _processingItemId = null);
+        }
+      }
     }
   }
 
@@ -311,10 +359,17 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                             const SizedBox(height: 8),
                             if (isOnDuty) ...[
                               Text(
-                                'Location: ${item['location_details'] ?? item['location'] ?? 'N/A'}',
+                                'Start Location: ${item['location'] ?? 'N/A'}',
                                 style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
                               ),
                               const SizedBox(height: 4),
+                              if (item['end_location'] != null && item['end_location'].toString().isNotEmpty) ...[
+                                Text(
+                                  'End Location: ${item['end_location']}',
+                                  style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                                ),
+                                const SizedBox(height: 4),
+                              ],
                               Text(
                                 'Purpose: ${item['purpose'] ?? 'N/A'}',
                                 style: TextStyle(color: Colors.grey.shade700, fontSize: 13),

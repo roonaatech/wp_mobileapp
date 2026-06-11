@@ -5,6 +5,8 @@ import 'dart:convert';
 import 'dart:io';
 import '../config/app_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
+import '../services/auth_service.dart';
 
 /// Creates an HTTP client that can handle self-signed SSL certificates
 http.Client _createHttpClient() {
@@ -14,7 +16,8 @@ http.Client _createHttpClient() {
 }
 
 class ChangePasswordScreen extends StatefulWidget {
-  const ChangePasswordScreen({super.key});
+  final bool isMandatory;
+  const ChangePasswordScreen({super.key, this.isMandatory = false});
 
   @override
   State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
@@ -102,7 +105,11 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               backgroundColor: Color(0xFF4CAF50),
             ),
           );
-          Navigator.pop(context);
+          if (widget.isMandatory) {
+            Provider.of<AuthService>(context, listen: false).setMustChangePassword(false);
+          } else {
+            Navigator.pop(context);
+          }
         }
       } else {
         final errorData = json.decode(response.body);
@@ -131,6 +138,18 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         title: const Text('Change Password'),
         backgroundColor: const Color(0xFF3B82F6),
         foregroundColor: Colors.white,
+        automaticallyImplyLeading: !widget.isMandatory,
+        actions: widget.isMandatory
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.logout),
+                  tooltip: 'Logout',
+                  onPressed: () {
+                    Provider.of<AuthService>(context, listen: false).logout();
+                  },
+                ),
+              ]
+            : null,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

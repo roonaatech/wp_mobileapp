@@ -770,20 +770,67 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
               
               // Subtitle/Location (Hide if Time-Off since it's in title/date)
               if (item['type'] != 'time_off' && item['subtitle'] != null) ...[
-                Text(
-                  'Details',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey[700],
+                if (item['type'] == 'on_duty' || item['type'] == 'on-duty') ...[
+                  Text(
+                    'Start Location',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  item['subtitle'],
-                  style: TextStyle(color: Colors.grey[700], fontSize: 13),
-                ),
-                const SizedBox(height: 16),
+                  const SizedBox(height: 6),
+                  Text(
+                    item['location'] ?? 'N/A',
+                    style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                  if (item['end_location'] != null && item['end_location'].toString().isNotEmpty) ...[
+                    Text(
+                      'End Location',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      item['end_location'],
+                      style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  Text(
+                    'Purpose',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    item['purpose'] ?? 'N/A',
+                    style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                ] else ...[
+                  Text(
+                    'Details',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    item['subtitle'],
+                    style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ],
               
               // Reason/Notes
