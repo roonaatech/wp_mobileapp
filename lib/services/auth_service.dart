@@ -30,6 +30,20 @@ class AuthSetupRequiredException implements Exception {
   String toString() => message;
 }
 
+class AuthDeclarationRequiredException implements Exception {
+  final String message;
+  AuthDeclarationRequiredException(this.message);
+  @override
+  String toString() => message;
+}
+
+class AuthPasswordSetupRequiredException implements Exception {
+  final String message;
+  AuthPasswordSetupRequiredException(this.message);
+  @override
+  String toString() => message;
+}
+
 class AppUpdateRequiredException implements Exception {
   final String message;
   final String currentVersion;
@@ -185,7 +199,13 @@ class AuthService with ChangeNotifier {
       }
 
       if (response.statusCode != 200) {
-        throw Exception(responseData['message']);
+        if (responseData != null && responseData is Map && responseData['code'] == 'DECLARATION_REQUIRED') {
+          throw AuthDeclarationRequiredException(responseData['message'] ?? 'Declaration required');
+        }
+        if (responseData != null && responseData is Map && responseData['code'] == 'PASSWORD_SETUP_REQUIRED') {
+          throw AuthPasswordSetupRequiredException(responseData['message'] ?? 'Password setup required');
+        }
+        throw Exception(responseData['message'] ?? 'Login failed');
       }
 
       // Check for Setup Required (Role or Gender missing)
