@@ -34,14 +34,16 @@ void main() {
       print('Error fetching settings, using defaults: $e');
     }
 
-    // Suppress google_fonts asset loading errors (they'll fallback to system fonts)
+    // Suppress google_fonts asset loading errors (they'll fallback to bundled/system fonts)
     GoogleFonts.config.allowRuntimeFetching = false;
     
     // Catch Flutter framework errors
     FlutterError.onError = (FlutterErrorDetails details) {
+      final exStr = details.exception.toString().toLowerCase();
       // Suppress google_fonts AssetManifest errors
-      if (details.exception.toString().contains('AssetManifest.json') ||
-          details.exception.toString().contains('google_fonts')) {
+      if (exStr.contains('assetmanifest.json') ||
+          exStr.contains('google_fonts') ||
+          exStr.contains('googlefonts')) {
         if (kDebugMode) {
           print('Google Fonts fallback: ${details.exception}');
         }
@@ -67,9 +69,11 @@ void main() {
       ),
     );
   }, (error, stackTrace) {
+    final errStr = error.toString().toLowerCase();
     // Suppress google_fonts AssetManifest errors
-    if (error.toString().contains('AssetManifest.json') ||
-        error.toString().contains('google_fonts')) {
+    if (errStr.contains('assetmanifest.json') ||
+        errStr.contains('google_fonts') ||
+        errStr.contains('googlefonts')) {
       if (kDebugMode) {
         print('Google Fonts fallback (uncaught): $error');
       }

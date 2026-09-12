@@ -269,6 +269,16 @@ class AuthService with ChangeNotifier {
       await ActivityLogger.logLogin(_userName ?? 'User');
       
       notifyListeners();
+    } on SocketException catch (error) {
+      print('Network Error: $error');
+      throw Exception('Unable to connect to server. Please verify that the backend server is running and reachable.');
+    } on http.ClientException catch (error) {
+      print('HTTP Client Error: $error');
+      final msg = error.message.toLowerCase();
+      if (msg.contains('connection refused') || error.toString().toLowerCase().contains('connection refused') || error.toString().toLowerCase().contains('socketexception')) {
+        throw Exception('Unable to connect to server. Please ensure the backend server is running.');
+      }
+      throw Exception('Network error: ${error.message}');
     } catch (error) {
       print('Login Error: $error');
       rethrow;

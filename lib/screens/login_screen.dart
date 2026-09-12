@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/brand_logo.dart';
 import '../services/auth_service.dart';
@@ -89,9 +88,16 @@ class _LoginScreenState extends State<LoginScreen> {
       } else if (errorMessage.toLowerCase().contains("inactive")) {
         _showInactiveDialog(context);
       } else {
+        String displayMessage = errorMessage.replaceAll('Exception: ', '').trim();
+        if (displayMessage.toLowerCase().contains('user not found')) {
+          displayMessage = 'User not found. Please check your email or contact your administrator.';
+        } else if (displayMessage.toLowerCase().contains('connection refused') ||
+                   displayMessage.toLowerCase().contains('socketexception')) {
+          displayMessage = 'Unable to connect to server. Please verify the backend server is running.';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Login failed: ${errorMessage.replaceAll('Exception: ', '')}'),
+            content: Text(displayMessage),
             backgroundColor: Colors.red,
           ),
         );
@@ -940,7 +946,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                       'WorkPulse',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.poppins(
+                                      style: const TextStyle(
+                                        fontFamily: 'Poppins',
                                         fontSize: 38,
                                         fontWeight: FontWeight.w800,
                                         letterSpacing: -1,
@@ -950,7 +957,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   const SizedBox(height: 4),
                                   Text(
                                     'MANAGEMENT',
-                                    style: GoogleFonts.poppins(
+                                    style: const TextStyle(
+                                      fontFamily: 'Poppins',
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
                                       color: Colors.grey,
@@ -1089,28 +1097,31 @@ class _LoginScreenState extends State<LoginScreen> {
                                   children: [
                                     Text(
                                       'Login Information',
-                                      style: GoogleFonts.poppins(
+                                      style: const TextStyle(
+                                        fontFamily: 'Poppins',
                                         fontSize: 14,
                                         fontWeight: FontWeight.w600,
-                                        color: const Color(0xFF1F2937),
+                                        color: Color(0xFF1F2937),
                                       ),
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
                                       'Use your ABIS username and password to login to WorkPulse.',
-                                      style: GoogleFonts.poppins(
+                                      style: const TextStyle(
+                                        fontFamily: 'Poppins',
                                         fontSize: 12,
                                         fontWeight: FontWeight.w500,
-                                        color: const Color(0xFF6B7280),
+                                        color: Color(0xFF6B7280),
                                       ),
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
                                       'If you forget your password, please reset it in the ABIS application.',
-                                      style: GoogleFonts.poppins(
+                                      style: const TextStyle(
+                                        fontFamily: 'Poppins',
                                         fontSize: 12,
                                         fontWeight: FontWeight.w500,
-                                        color: const Color(0xFF6B7280),
+                                        color: Color(0xFF6B7280),
                                       ),
                                     ),
                                   ],
@@ -1143,7 +1154,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       child: Text(
                         AppConfig.envLabel,
-                        style: GoogleFonts.poppins(
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
                           color: Colors.white,
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
@@ -1155,8 +1167,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       opacity: 0.5,
                       child: Text(
                         _versionInfo.isNotEmpty ? _versionInfo : 'v${AppConfig.appVersion} (${AppConfig.appBuild})',
-                        style: GoogleFonts.poppins(
-                          color: const Color(0xFF6B7280),
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Color(0xFF6B7280),
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
                         ),
