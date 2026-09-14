@@ -1,29 +1,56 @@
 import 'dart:io';
+import 'package:device_info_plus/device_info_plus.dart';
 
 class AppConfig {
   // ============================================
   // BACKEND CONFIGURATION - CHANGE URL HERE ONLY
   // ============================================
   // For Android Emulator: http://10.0.2.2:3000
+  // For Android Physical Device (with adb reverse tcp:3000 tcp:3000): http://localhost:3000
   // For iOS Simulator: http://localhost:3000
-  // For Physical Device: http://192.168.x.x:3000 (your computer's IP)
   // For Production: https://api.roonaa.in:3343
   //
   // USAGE:
-  // flutter run                                                  -> Development (localhost/emulator)
+  // flutter run                                                  -> Development (localhost/emulator/device)
   // flutter build apk --release --dart-define=ENV=uat            -> UAT server
   // flutter build apk --release --dart-define=ENV=prod           -> Production server
   
   static const String _androidEmulatorUrl = 'http://10.0.2.2:3000';
+  static const String _androidDeviceUrl = 'http://localhost:3000';
   static const String _testServerUrl = 'https://api.workpulse-uat.roonaa.in:3353';
   static const String _iosSimulatorUrl = 'http://localhost:3000';
   static const String _productionUrl = 'https://api-workpulse.roonaa.in:3353';
 
+  static bool _isPhysicalDevice = false;
+  static bool _initialized = false;
+
+  /// Initialize device detection for physical Android vs emulator
+  static Future<void> initialize() async {
+    if (_initialized) return;
+    if (Platform.isAndroid) {
+      try {
+        final deviceInfo = DeviceInfoPlugin();
+        final androidInfo = await deviceInfo.androidInfo;
+        _isPhysicalDevice = androidInfo.isPhysicalDevice;
+        print('AppConfig: Android isPhysicalDevice = $_isPhysicalDevice');
+      } catch (e) {
+        print('AppConfig: Failed to detect physical device: $e');
+      }
+    }
+    _initialized = true;
+  }
+
   // Get the appropriate base URL based on platform and environment
   static String get apiBaseUrl {
+    // Check for direct override via --dart-define=API_URL=http://...
+    const String customUrl = String.fromEnvironment('API_URL');
+    if (customUrl.isNotEmpty) {
+      return customUrl;
+    }
+
     // Check environment flag: 'dev', 'uat', or 'prod'
     // Usage:
-    //   flutter run                                    -> Development (localhost/emulator)
+    //   flutter run                                         -> Development (localhost/emulator)
     //   flutter build apk --release --dart-define=ENV=uat   -> UAT server
     //   flutter build apk --release --dart-define=ENV=prod  -> Production server
     const String env = String.fromEnvironment('ENV', defaultValue: 'dev');
@@ -44,6 +71,11 @@ class AppConfig {
     if (!isReleaseMode) {
       // Debug mode - use emulator/simulator addresses
       if (Platform.isAndroid) {
+        const bool forcePhysical = bool.fromEnvironment('PHYSICAL', defaultValue: false);
+        if (_isPhysicalDevice || forcePhysical || env == 'physical') {
+          // On physical Android device with `adb reverse tcp:3000 tcp:3000`
+          return _androidDeviceUrl;
+        }
         // Android emulator uses special address for host machine
         return _androidEmulatorUrl;
       } else if (Platform.isIOS) {
@@ -69,6 +101,7 @@ class AppConfig {
   
   static String get authSignIn => '$apiBaseUrl/api/auth/signin';
   static String get authCheck => '$apiBaseUrl/api/auth/check';
+  static String get authForgotPassword => '$apiBaseUrl/api/auth/forgot-password';
 
   // Settings endpoints
   static String get settingsPublic => '$apiBaseUrl/api/settings/public';
@@ -91,7 +124,38 @@ class AppConfig {
   // Time-off endpoints
   static String get timeOffApply => '$apiBaseUrl/api/timeoff/apply';
   static String get timeOffDetail => '$apiBaseUrl/api/timeoff'; // Append ID: $timeOffDetail/{id}
-  
+
+  // Face Attendance endpoints
+  static String get attendanceStatus => '$apiBaseUrl/api/attendance/status';
+  static String get faceStatus => '$apiBaseUrl/api/attendance/face-status';
+  static String get checkInOutWithFace => '$apiBaseUrl/api/attendance/check-in-out-with-face';
+  static String get identifyFace => '$apiBaseUrl/api/attendance/identify-face';
+  static String get attendanceStaffList => '$apiBaseUrl/api/attendance/staff-list';
+  static String get attendanceKioskRecord => '$apiBaseUrl/api/attendance/kiosk-record';
+
+  /// Base URL for the Face Attendance web portal (kiosk/scanner)
+  static String get attendancePortalUrl {
+    const String customUrl = String.fromEnvironment('PORTAL_URL');
+    if (customUrl.isNotEmpty) {
+      return customUrl;
+    }
+    const String env = String.fromEnvironment('ENV', defaultValue: 'dev');
+    const bool isReleaseMode = bool.fromEnvironment('dart.vm.product');
+    if (env == 'prod') {
+      return 'https://workpulse.roonaa.in/attendance';
+    }
+    if (env == 'uat') {
+      return 'https://workpulse-uat.roonaa.in/attendance';
+    }
+    if (!isReleaseMode) {
+      if (Platform.isAndroid && !_isPhysicalDevice) {
+        return 'http://10.0.2.2:5173/attendance';
+      }
+      return 'http://localhost:5173/attendance';
+    }
+    return 'https://workpulse.roonaa.in/attendance';
+  }
+
   // APK endpoints
   static String get apkLatest => '$apiBaseUrl/api/apk/latest';
   static String get apkCheckVersion => '$apiBaseUrl/api/apk/check-version';

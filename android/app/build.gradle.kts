@@ -51,9 +51,27 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            // Release APKs are for ARM phones only: drops x86_64 native libraries
+            // (ML Kit, TFLite) that keep the universal APK above the 100 MB upload
+            // limit. Skipped for --split-per-abi, which already builds one APK per ABI
+            // and cannot be combined with abiFilters.
+            if (project.findProperty("split-per-abi")?.toString() != "true") {
+                ndk {
+                    abiFilters.clear()
+                    abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+                }
+            }
         }
         debug {
             signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // Face recognition runs TFLite on the CPU; tflite_flutter only loads the
+            // GPU delegate library when a GpuDelegate is created, which the app never does.
+            excludes += "**/libtensorflowlite_gpu_jni.so"
         }
     }
 }

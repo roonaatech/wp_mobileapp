@@ -35,6 +35,20 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   bool _showConfirmPassword = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final authService = Provider.of<AuthService>(context, listen: false);
+      if (authService.currentPassword != null && authService.currentPassword!.isNotEmpty) {
+        setState(() {
+          _oldPasswordController.text = authService.currentPassword!;
+        });
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _oldPasswordController.dispose();
     _newPasswordController.dispose();
@@ -55,6 +69,11 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     }
     if (value.length < 6) {
       return 'Password must be at least 6 characters';
+    }
+    if (value == _oldPasswordController.text.trim()) {
+      return widget.isMandatory
+          ? 'New password cannot be the same as your temporary password'
+          : 'New password cannot be the same as your current password';
     }
     return null;
   }
@@ -98,11 +117,23 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       );
 
       if (response.statusCode == 200) {
+        // Update saved_password in SharedPreferences if Remember Me is active
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final remember = prefs.getBool('remember_me') ?? false;
+          if (remember) {
+            await prefs.setString('saved_password', _newPasswordController.text);
+          }
+        } catch (e) {
+          print('Error updating saved_password in prefs: $e');
+        }
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Password changed successfully!'),
-              backgroundColor: Color(0xFF4CAF50),
+              content: Text('Password updated successfully!'),
+              backgroundColor: Color(0xFF10B981),
+              behavior: SnackBarBehavior.floating,
             ),
           );
           if (widget.isMandatory) {
@@ -135,7 +166,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Change Password'),
+        title: Text(widget.isMandatory ? 'Set New Password' : 'Change Password'),
         backgroundColor: const Color(0xFF3B82F6),
         foregroundColor: Colors.white,
         automaticallyImplyLeading: !widget.isMandatory,
@@ -169,26 +200,28 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   ),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.lock, color: Colors.white, size: 40),
-                    SizedBox(width: 16),
+                    const Icon(Icons.lock, color: Colors.white, size: 40),
+                    const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Secure Your Account',
-                            style: TextStyle(
+                            widget.isMandatory ? 'Create New Password' : 'Secure Your Account',
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          SizedBox(height: 4),
+                          const SizedBox(height: 4),
                           Text(
-                            'Update your password to keep your account safe',
-                            style: TextStyle(
+                            widget.isMandatory
+                                ? 'Please set a new permanent password to access your dashboard.'
+                                : 'Update your password to keep your account safe',
+                            style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 12,
                             ),
@@ -208,7 +241,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                 obscureText: !_showOldPassword,
                 validator: _validateOldPassword,
                 decoration: InputDecoration(
-                  labelText: 'Current Password',
+                  labelText: widget.isMandatory ? 'Temporary Password' : 'Current Password',
+                  helperText: widget.isMandatory ? 'Pre-filled from your temporary password' : null,
                   prefixIcon: const Icon(Icons.lock_outline),
                   suffixIcon: IconButton(
                     icon: Icon(_showOldPassword ? Icons.visibility : Icons.visibility_off),
@@ -290,9 +324,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                           strokeWidth: 2,
                         ),
                       )
-                    : const Text(
-                        'Change Password',
-                        style: TextStyle(
+                    : Text(
+                        widget.isMandatory ? 'Save New Password & Continue' : 'Change Password',
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),

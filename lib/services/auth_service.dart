@@ -67,11 +67,21 @@ class AuthService with ChangeNotifier {
   String? _token;
   String? _userId;
   String? _userName;
+  String? _userEmail;
   int? _externalUserId; // userid from backend (null = WorkPulse-only user)
   bool _mustChangePassword = false;
+  String? _currentPassword;
+  bool _canAccessAttendancePortal = false;
+  bool _isServiceAccount = false;
 
   bool get mustChangePassword {
     return _mustChangePassword;
+  }
+
+  String? get currentPassword => _currentPassword;
+
+  void setCurrentPassword(String? password) {
+    _currentPassword = password;
   }
 
   bool get isAuth {
@@ -82,9 +92,17 @@ class AuthService with ChangeNotifier {
     return _token;
   }
 
+  String? get userId => _userId;
+
   String? get userName {
     return _userName;
   }
+
+  String? get userEmail => _userEmail;
+
+  bool get canAccessAttendancePortal => _canAccessAttendancePortal;
+
+  bool get isServiceAccount => _isServiceAccount;
 
   // Check if user is WorkPulse-only (not synced from external system)
   bool get isWorkPulseOnlyUser {
@@ -112,9 +130,17 @@ class AuthService with ChangeNotifier {
         }
       }
       _mustChangePassword = userData['mustChangePassword'] ?? false;
+      _canAccessAttendancePortal = userData['can_access_attendance_portal'] ?? false;
+      _isServiceAccount = userData['isServiceAccount'] ?? false;
+      _userEmail = userData['email'];
     }
 
       notifyListeners();
+
+      // Refresh face attendance permission in background
+      if (_token != null) {
+        refreshFaceAttendancePermission();
+      }
 
       // Refresh settings using the token just in case public fetch failed or migration not run
       try {
@@ -135,9 +161,6 @@ class AuthService with ChangeNotifier {
       return true;
   }
 
-  String? get _baseUrl {
-    return null; // Using AppConfig instead
-  }
 
   Future<void> login(String email, String password, {bool forceLocal = false}) async {
     final url = AppConfig.authSignIn;
@@ -211,21 +234,26 @@ class AuthService with ChangeNotifier {
       // Check for Setup Required (Role or Gender missing)
       final role = responseData['role'];
       final gender = responseData['gender'];
+      final canAccessAttendance = responseData['can_access_attendance_portal'] == true;
 
       // Helper to check if role/gender is invalid
       // Role: null or 0 means invalid
-      // Gender: null or empty string means invalid
+      // Gender: null or empty string means invalid (not required for face attendance portal users)
       final isRoleInvalid = role == null || role == 0 || role == '0';
-      final isGenderInvalid = gender == null || gender == '';
+      final isGenderInvalid = (gender == null || gender == '') && !canAccessAttendance;
 
       if (isRoleInvalid || isGenderInvalid) {
          throw AuthSetupRequiredException("Setup Required");
       }
 
+      _currentPassword = password;
       _token = responseData['accessToken'];
       _userId = responseData['id'].toString();
+      _userEmail = responseData['email'] ?? email;
       _userName = '${responseData['firstname'] ?? ''} ${responseData['lastname'] ?? ''}'.trim();
       _mustChangePassword = responseData['mustChangePassword'] ?? false;
+      _canAccessAttendancePortal = responseData['can_access_attendance_portal'] == true;
+      _isServiceAccount = responseData['isServiceAccount'] == true;
       
       final rawExtId = responseData['userid'];
       if (rawExtId != null) {
@@ -243,8 +271,11 @@ class AuthService with ChangeNotifier {
         'token': _token,
         'userId': _userId,
         'userName': _userName,
+        'email': _userEmail,
         'externalUserId': _externalUserId,
         'mustChangePassword': _mustChangePassword,
+        'can_access_attendance_portal': _canAccessAttendancePortal,
+        'isServiceAccount': _isServiceAccount,
       });
       prefs.setString('userData', userData);
       prefs.setString('token', _token!);
@@ -290,10 +321,14 @@ class AuthService with ChangeNotifier {
     final token = _token;
 
     _token = null;
+    _currentPassword = null;
     _userId = null;
     _userName = null;
+    _userEmail = null;
     _externalUserId = null;
     _mustChangePassword = false;
+    _canAccessAttendancePortal = false;
+    _isServiceAccount = false;
     
     final prefs = await SharedPreferences.getInstance();
     prefs.remove('userData');
@@ -321,6 +356,43 @@ class AuthService with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Check and refresh Face Attendance permission from backend
+  Future<bool> refreshFaceAttendancePermission() async {
+    if (_token == null) return false;
+    try {
+      final client = _createHttpClient();
+      final response = await client.get(
+        Uri.parse(AppConfig.faceStatus),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': _token!,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final bool allowed = data['can_access_attendance_portal'] == true;
+        if (_canAccessAttendancePortal != allowed) {
+          _canAccessAttendancePortal = allowed;
+          
+          final prefs = await SharedPreferences.getInstance();
+          final userDataString = prefs.getString('userData');
+          if (userDataString != null) {
+            try {
+              final userData = json.decode(userDataString) as Map<String, dynamic>;
+              userData['can_access_attendance_portal'] = allowed;
+              await prefs.setString('userData', json.encode(userData));
+            } catch (_) {}
+          }
+          notifyListeners();
+        }
+        return allowed;
+      }
+    } catch (e) {
+      print('Error refreshing face attendance permission: $e');
+    }
+    return _canAccessAttendancePortal;
+  }
+
   void setMustChangePassword(bool value) async {
     _mustChangePassword = value;
     final prefs = await SharedPreferences.getInstance();
@@ -329,12 +401,42 @@ class AuthService with ChangeNotifier {
       try {
         final userData = json.decode(userDataString) as Map<String, dynamic>;
         userData['mustChangePassword'] = value;
-        await prefs.setString('userData', json.encode(userData));
+        prefs.setString('userData', json.encode(userData));
       } catch (e) {
-        print('Error updating mustChangePassword in SharedPreferences: $e');
+        print('Error updating mustChangePassword in prefs: $e');
       }
     }
     notifyListeners();
+  }
+
+  /// Request temporary password via email
+  Future<String> forgotPassword(String email) async {
+    final url = AppConfig.authForgotPassword;
+    final client = _createHttpClient();
+
+    try {
+      final response = await client.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'email': email.trim(),
+        }),
+      );
+
+      final data = json.decode(response.body);
+      if (response.statusCode == 200) {
+        return data['message'] ?? 'A temporary password has been sent to your email address.';
+      } else {
+        throw Exception(data['message'] ?? 'Failed to send temporary password.');
+      }
+    } on SocketException catch (_) {
+      throw Exception('Unable to connect to server. Please verify network connection.');
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception(e.toString());
+    }
   }
 
   /// Fetch application global settings from settings endpoint

@@ -6,6 +6,8 @@ import '../services/auth_service.dart';
 import '../config/app_config.dart';
 import '../utils/ist_helper.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,12 +22,34 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   var _isLoading = false;
   bool _obscurePassword = true;
+  bool _rememberMe = false;
   String _versionInfo = "";
 
   @override
   void initState() {
     super.initState();
     _loadVersion();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final remember = prefs.getBool('remember_me') ?? false;
+      if (remember) {
+        final email = prefs.getString('saved_email') ?? '';
+        final password = prefs.getString('saved_password') ?? '';
+        if (mounted) {
+          setState(() {
+            _rememberMe = true;
+            if (email.isNotEmpty) _emailController.text = email;
+            if (password.isNotEmpty) _passwordController.text = password;
+          });
+        }
+      }
+    } catch (e) {
+      print("Error loading saved credentials: $e");
+    }
   }
 
   Future<void> _loadVersion() async {
@@ -69,6 +93,22 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       } catch (e) {
         print('Error refreshing settings after login: $e');
+      }
+
+      // Persist or clear Remember Me credentials based on user preference
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if (_rememberMe) {
+          await prefs.setBool('remember_me', true);
+          await prefs.setString('saved_email', _emailController.text.trim());
+          await prefs.setString('saved_password', _passwordController.text);
+        } else {
+          await prefs.setBool('remember_me', false);
+          await prefs.remove('saved_email');
+          await prefs.remove('saved_password');
+        }
+      } catch (e) {
+        print('Error saving credentials preference: $e');
       }
 
       // Navigation is handled by AuthWrapper in main.dart
@@ -1041,7 +1081,91 @@ class _LoginScreenState extends State<LoginScreen> {
                                   return null;
                                 },
                               ),
-                              const SizedBox(height: 32),
+                              const SizedBox(height: 12),
+                              // Remember Me & Forgot Password Row
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  // Remember Me checkbox
+                                  InkWell(
+                                    borderRadius: BorderRadius.circular(8),
+                                    onTap: () {
+                                      setState(() {
+                                        _rememberMe = !_rememberMe;
+                                      });
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          SizedBox(
+                                            width: 22,
+                                            height: 22,
+                                            child: Checkbox(
+                                              value: _rememberMe,
+                                              activeColor: const Color(0xFF3B82F6),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              side: const BorderSide(color: Color(0xFF94A3B8), width: 1.5),
+                                              onChanged: (val) {
+                                                setState(() {
+                                                  _rememberMe = val ?? false;
+                                                });
+                                              },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          const Text(
+                                            'Remember Me',
+                                            style: TextStyle(
+                                              fontFamily: 'Poppins',
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w500,
+                                              color: Color(0xFF475569),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+
+                                  // Forgot Password button
+                                  TextButton(
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    onPressed: () async {
+                                      final returnedEmail = await Navigator.of(context).push<String>(
+                                        MaterialPageRoute(
+                                          builder: (_) => ForgotPasswordScreen(
+                                            initialEmail: _emailController.text.trim(),
+                                          ),
+                                        ),
+                                      );
+                                      if (returnedEmail != null && returnedEmail.isNotEmpty && mounted) {
+                                        setState(() {
+                                          _emailController.text = returnedEmail;
+                                          _passwordController.clear();
+                                        });
+                                      }
+                                    },
+                                    child: const Text(
+                                      'Forgot Password?',
+                                      style: TextStyle(
+                                        fontFamily: 'Poppins',
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF4F46E5),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 24),
                               // Sign In Button
                               GestureDetector(
                                 onTap: _isLoading ? null : _submit,
@@ -1081,50 +1205,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                             ),
                                           ),
                                   ),
-                                ),
-                              ),
-                              const SizedBox(height: 24),
-                              // Information Text
-                              Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF0F4FF),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: const Color(0xFFDEE2FF), width: 1),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Login Information',
-                                      style: const TextStyle(
-                                        fontFamily: 'Poppins',
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF1F2937),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Use your ABIS username and password to login to WorkPulse.',
-                                      style: const TextStyle(
-                                        fontFamily: 'Poppins',
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                        color: Color(0xFF6B7280),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'If you forget your password, please reset it in the ABIS application.',
-                                      style: const TextStyle(
-                                        fontFamily: 'Poppins',
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                        color: Color(0xFF6B7280),
-                                      ),
-                                    ),
-                                  ],
                                 ),
                               ),
                             ],

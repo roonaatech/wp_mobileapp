@@ -9,10 +9,14 @@ import 'screens/change_password_screen.dart';
 import 'services/attendance_service.dart';
 import 'services/auth_service.dart';
 import 'utils/ist_helper.dart';
+import 'config/app_config.dart';
 
 void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+
+    // Initialize AppConfig (detects physical Android device vs emulator)
+    await AppConfig.initialize();
 
     // Initialize timezone helper
     await ISTHelper.initialize();

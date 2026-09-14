@@ -610,4 +610,203 @@ class AttendanceService with ChangeNotifier {
       rethrow;
     }
   }
+
+  /// Fetch today's attendance status for the specified employee email
+  Future<Map<String, dynamic>> getTodayAttendanceStatus(String email) async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final url = '${AppConfig.attendanceStatus}/${Uri.encodeComponent(email)}';
+    try {
+      final response = await _client.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to fetch attendance status: ${response.statusCode}');
+      }
+      return json.decode(response.body);
+    } catch (error) {
+      rethrow;
+    }
+  }
+
+  /// Fetch face registration status for the currently authenticated user
+  Future<Map<String, dynamic>> getFaceStatus() async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final url = AppConfig.faceStatus;
+    try {
+      final response = await _client.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to fetch face status: ${response.statusCode}');
+      }
+      return json.decode(response.body);
+    } catch (error) {
+      rethrow;
+    }
+  }
+
+  /// Fetch list of all active staff members for the attendance kiosk terminal
+  Future<List<Map<String, dynamic>>> getStaffList() async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final url = AppConfig.attendanceStaffList;
+    try {
+      final response = await _client.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to fetch staff list: ${response.statusCode}');
+      }
+      final decoded = json.decode(response.body);
+      if (decoded is List) {
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      return [];
+    } catch (error) {
+      rethrow;
+    }
+  }
+
+  /// Record check-in or check-out for an employee via the in-app kiosk terminal
+  Future<Map<String, dynamic>> recordKioskAttendance({
+    required String email,
+    required String action,
+    double? latitude,
+    double? longitude,
+    String? phoneModel,
+  }) async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final url = AppConfig.attendanceKioskRecord;
+    try {
+      final response = await _client.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+        body: json.encode({
+          'email': email,
+          'action': action,
+          'latitude': latitude?.toString(),
+          'longitude': longitude?.toString(),
+          'phone_model': phoneModel ?? 'WorkPulse Mobile Kiosk',
+        }),
+      );
+
+      final responseBody = json.decode(response.body);
+      if (response.statusCode != 200) {
+        throw Exception(responseBody['message'] ?? 'Failed to record attendance');
+      }
+
+      notifyListeners();
+      return Map<String, dynamic>.from(responseBody);
+    } catch (error) {
+      rethrow;
+    }
+  }
+
+  /// Identify an employee from a 128-d face descriptor, exactly like the web
+  /// attendance portal. Returns `{matched, email, employeeName, distance}`.
+  Future<Map<String, dynamic>> identifyFace(List<double> faceDescriptor) async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final response = await _client
+        .post(
+          Uri.parse(AppConfig.identifyFace),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': token!,
+          },
+          body: json.encode({'faceDescriptor': faceDescriptor}),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    final responseBody = _decodeJsonObject(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(responseBody['message'] ?? 'Face identification failed (${response.statusCode})');
+    }
+    return responseBody;
+  }
+
+  /// Record a check-in / check-out that the backend verifies against the
+  /// employee's registered Face ID (front, left and right profiles), as the web
+  /// portal does. Pass [livenessVerified] after the head-turn check, or a
+  /// [password] for the manual fallback.
+  Future<Map<String, dynamic>> checkInOutWithFace({
+    required String email,
+    required String action,
+    required List<double> faceDescriptor,
+    List<double>? faceDescriptorLeft,
+    List<double>? faceDescriptorRight,
+    String? snapshotImage,
+    String? password,
+    bool livenessVerified = false,
+    double? latitude,
+    double? longitude,
+    String? phoneModel,
+  }) async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final response = await _client
+        .post(
+          Uri.parse(AppConfig.checkInOutWithFace),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': token!,
+          },
+          body: json.encode({
+            'email': email,
+            'action': action,
+            'faceDescriptor': faceDescriptor,
+            if (faceDescriptorLeft != null) 'faceDescriptorLeft': faceDescriptorLeft,
+            if (faceDescriptorRight != null) 'faceDescriptorRight': faceDescriptorRight,
+            if (snapshotImage != null) 'snapshotImage': snapshotImage,
+            if (password != null) 'password': password,
+            if (livenessVerified) 'livenessVerified': true,
+            'latitude': latitude?.toString(),
+            'longitude': longitude?.toString(),
+            'phone_model': phoneModel ?? 'WorkPulse Mobile Kiosk',
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+
+    final responseBody = _decodeJsonObject(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(responseBody['message'] ?? 'Failed to record attendance (${response.statusCode})');
+    }
+    notifyListeners();
+    return responseBody;
+  }
+
+  Map<String, dynamic> _decodeJsonObject(String body) {
+    try {
+      final decoded = json.decode(body);
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    return <String, dynamic>{};
+  }
 }
