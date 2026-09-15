@@ -74,6 +74,7 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
   DateTime _lastFrameAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastFaceSeenAt = DateTime.fromMillisecondsSinceEpoch(0);
   CameraFaceFrame? _latestFrame;
+  FaceRect? _latestBox;
   FaceLandmarks68? _latestLandmarks;
 
   bool _faceDetected = false;
@@ -340,6 +341,7 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
 
       _lastFaceSeenAt = DateTime.now();
       _latestFrame = frame;
+      _latestBox = box;
       _latestLandmarks = landmarks;
       if (!_faceDetected) {
         setState(() {
@@ -348,9 +350,9 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
       }
 
       if (_passwordMode || _identifiedEmployee == null) {
-        await _identify(frame, landmarks);
+        await _identify(frame, box, landmarks);
       } else {
-        await _trackHeadTurn(frame, landmarks);
+        await _trackHeadTurn(frame, box, landmarks);
       }
     } catch (e) {
       debugPrint('Face frame processing error: $e');
@@ -396,7 +398,7 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     });
   }
 
-  Future<void> _identify(CameraFaceFrame frame, FaceLandmarks68 landmarks) async {
+  Future<void> _identify(CameraFaceFrame frame, FaceRect box, FaceLandmarks68 landmarks) async {
     if (_passwordMode && _emailController.text.trim().isNotEmpty) return;
     final now = DateTime.now();
     if (_identifying || now.difference(_lastIdentifyAt) < _identifyInterval) return;
@@ -421,7 +423,8 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     }
 
     try {
-      final descriptor = await _engine.computeDescriptor(frame.image, landmarks);
+      // Same detector -> landmarks -> descriptor pipeline as the web portal.
+      final descriptor = (await _engine.describeFace(frame.image, box))?.descriptor;
       if (descriptor == null || !_canProcessFrames) return;
 
       final result = await attendanceService.identifyFace(descriptor);
@@ -479,7 +482,7 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     }
   }
 
-  Future<void> _trackHeadTurn(CameraFaceFrame frame, FaceLandmarks68 landmarks) async {
+  Future<void> _trackHeadTurn(CameraFaceFrame frame, FaceRect box, FaceLandmarks68 landmarks) async {
     if (_capturingProfile || _attendanceStatus?['status'] == 'COMPLETED') return;
 
     final yaw = landmarks.yawRatio;
@@ -494,7 +497,8 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     if ((capturePortalLeft || capturePortalRight) && _lookingCenter) {
       _capturingProfile = true;
       try {
-        final descriptor = await _engine.computeDescriptor(frame.image, landmarks);
+        // Profile descriptors use the web portal's detector pipeline as well.
+        final descriptor = (await _engine.describeFace(frame.image, box))?.descriptor;
         if (descriptor == null || !_canProcessFrames || _identifiedEmployee == null) return;
         setState(() {
           _lookingCenter = false;
@@ -583,8 +587,11 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     }
 
     final frame = _latestFrame;
-    final landmarks = _latestLandmarks;
-    if (frame == null || landmarks == null || DateTime.now().difference(_lastFaceSeenAt) > _faceLostGrace) {
+    final box = _latestBox;
+    if (frame == null ||
+        box == null ||
+        _latestLandmarks == null ||
+        DateTime.now().difference(_lastFaceSeenAt) > _faceLostGrace) {
       _showSnack('Position your face inside the frame.');
       return;
     }
@@ -599,7 +606,7 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     setState(() {
       _statusMessage = 'Scanning face. Look directly at the camera...';
     });
-    final descriptor = await _engine.computeDescriptor(frame.image, landmarks);
+    final descriptor = (await _engine.describeFace(frame.image, box))?.descriptor;
     if (!_isActive) return;
     if (descriptor == null) {
       _showSnack('Position your face inside the frame.');

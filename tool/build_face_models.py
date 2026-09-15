@@ -10,8 +10,9 @@ Usage (TensorFlow 2.19, Python 3.12):
     python tool/build_face_models.py \
         ../wp_webapp/node_modules/@vladmandic/face-api/model assets/models
 
-Writes face_landmark_68.tflite and face_recognition.tflite (float16 weights).
-Float16 descriptors differ from face-api.js by < 0.001 (euclidean).
+Writes ssd_mobilenetv1.tflite (face detector), face_landmark_68.tflite and
+face_recognition.tflite (float16 weights). Float16 descriptors differ from
+face-api.js by < 0.001 (euclidean); SSD boxes by < 0.3 px.
 """
 import json
 import os
@@ -146,6 +147,71 @@ def recognition_net(x):
     return tf.matmul(out, RW["fc"])
 
 
+# ------------------------------------------------------ SSD MobileNet v1
+# The web portal's face detector (src/ssdMobilenetv1). Output rows are
+# (ymin, xmin, ymax, xmax, score) relative to the 512 input square; NMS and
+# scaling back to image pixels run in lib/utils/ssd_face_decoder.dart.
+SW = load_weights("ssd_mobilenetv1_model")
+SSD_EPS = 0.0010000000474974513
+PRIORS = SW["Output/extra_dim"].reshape(-1, 4)
+P_SIZE0 = PRIORS[:, 2] - PRIORS[:, 0]
+P_SIZE1 = PRIORS[:, 3] - PRIORS[:, 1]
+P_CENTER0 = PRIORS[:, 0] + P_SIZE0 / 2
+P_CENTER1 = PRIORS[:, 1] + P_SIZE1 / 2
+
+
+def ssd_pointwise(x, prefix, idx, stride):
+    out = tf.nn.conv2d(x, SW[f"{prefix}/Conv2d_{idx}_pointwise/weights"], stride, "SAME")
+    out = out + SW[f"{prefix}/Conv2d_{idx}_pointwise/convolution_bn_offset"]
+    return tf.clip_by_value(out, 0.0, 6.0)
+
+
+def ssd_depthwise(x, idx, stride):
+    p = f"MobilenetV1/Conv2d_{idx}_depthwise"
+    out = tf.nn.depthwise_conv2d(x, SW[p + "/depthwise_weights"], [1, stride, stride, 1], "SAME")
+    out = tf.nn.batch_normalization(
+        out, SW[p + "/BatchNorm/moving_mean"], SW[p + "/BatchNorm/moving_variance"],
+        SW[p + "/BatchNorm/beta"], SW[p + "/BatchNorm/gamma"], SSD_EPS)
+    return tf.clip_by_value(out, 0.0, 6.0)
+
+
+def ssd_box_predictor(x, idx):
+    p = f"Prediction/BoxPredictor_{idx}"
+    enc = tf.nn.conv2d(x, SW[p + "/BoxEncodingPredictor/weights"], 1, "SAME") + SW[p + "/BoxEncodingPredictor/biases"]
+    cls = tf.nn.conv2d(x, SW[p + "/ClassPredictor/weights"], 1, "SAME") + SW[p + "/ClassPredictor/biases"]
+    return tf.reshape(enc, [1, -1, 4]), tf.reshape(cls, [1, -1, 3])
+
+
+@tf.function(input_signature=[tf.TensorSpec([1, 512, 512, 3], tf.float32, name="rgb")])
+def ssd_net(x):
+    x = x / 127.5 - 1.0
+    out = ssd_pointwise(x, "MobilenetV1", 0, 2)
+    conv11 = None
+    for i in range(1, 14):
+        out = ssd_depthwise(out, i, 2 if i in (2, 4, 6, 12) else 1)
+        out = ssd_pointwise(out, "MobilenetV1", i, 1)
+        if i == 11:
+            conv11 = out
+    c0 = ssd_pointwise(out, "Prediction", 0, 1)
+    c1 = ssd_pointwise(c0, "Prediction", 1, 2)
+    c2 = ssd_pointwise(c1, "Prediction", 2, 1)
+    c3 = ssd_pointwise(c2, "Prediction", 3, 2)
+    c4 = ssd_pointwise(c3, "Prediction", 4, 1)
+    c5 = ssd_pointwise(c4, "Prediction", 5, 2)
+    c6 = ssd_pointwise(c5, "Prediction", 6, 1)
+    c7 = ssd_pointwise(c6, "Prediction", 7, 2)
+    preds = [ssd_box_predictor(conv11, 0), ssd_box_predictor(out, 1), ssd_box_predictor(c1, 2),
+             ssd_box_predictor(c3, 3), ssd_box_predictor(c5, 4), ssd_box_predictor(c7, 5)]
+    enc = tf.concat([p[0] for p in preds], 1)[0]
+    cls = tf.concat([p[1] for p in preds], 1)[0]
+    div0 = tf.exp(enc[:, 2] / 5) * P_SIZE0 / 2
+    add0 = enc[:, 0] / 10 * P_SIZE0 + P_CENTER0
+    div1 = tf.exp(enc[:, 3] / 5) * P_SIZE1 / 2
+    add1 = enc[:, 1] / 10 * P_SIZE1 + P_CENTER1
+    scores = tf.sigmoid(cls[:, 1])
+    return tf.stack([add0 - div0, add1 - div1, add0 + div0, add1 + div1, scores], axis=1)[None]
+
+
 def export(fn, name):
     converter = tf.lite.TFLiteConverter.from_concrete_functions([fn.get_concrete_function()], fn)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
@@ -155,5 +221,6 @@ def export(fn, name):
     print("wrote", path)
 
 
+export(ssd_net, "ssd_mobilenetv1")
 export(landmark_net, "face_landmark_68")
 export(recognition_net, "face_recognition")

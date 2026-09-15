@@ -1,14 +1,16 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../utils/face_geometry.dart';
+import '../utils/ssd_face_decoder.dart';
 
-/// On-device port of the face recognition pipeline used by the web attendance
-/// portal (face-api.js): FaceLandmark68Net -> dlib alignment ->
-/// FaceRecognitionNet.
+/// On-device port of the face pipeline used by the web attendance portal
+/// (face-api.js): SSD MobileNet v1 face detector -> FaceLandmark68Net -> dlib
+/// alignment -> FaceRecognitionNet.
 ///
 /// The bundled TFLite models were converted from the exact weights the web app
 /// loads, so the 128-d descriptors produced here are matched by the backend
@@ -19,22 +21,25 @@ class FaceRecognitionService {
   /// Shared instance - loading the models takes a moment, so keep them warm.
   static final FaceRecognitionService instance = FaceRecognitionService();
 
+  static const String detectorModelAsset = 'assets/models/ssd_mobilenetv1.tflite';
   static const String landmarkModelAsset = 'assets/models/face_landmark_68.tflite';
   static const String recognitionModelAsset = 'assets/models/face_recognition.tflite';
   static const int landmarkInputSize = 112;
   static const int recognitionInputSize = 150;
   static const int descriptorLength = 128;
+  static const int _detectorOutputLength = 5118 * 5;
 
   /// Prefix for the asset keys, e.g. `packages/attendance_app/` when the models
   /// are loaded from another package.
   final String assetPrefix;
 
+  IsolateInterpreter? _detectorRunner;
   IsolateInterpreter? _landmarkRunner;
   IsolateInterpreter? _recognitionRunner;
   Future<void>? _loading;
   Future<void> _queue = Future<void>.value();
 
-  bool get isLoaded => _landmarkRunner != null && _recognitionRunner != null;
+  bool get isLoaded => _detectorRunner != null && _landmarkRunner != null && _recognitionRunner != null;
 
   Future<void> load() {
     return _loading ??= _load().catchError((Object error, StackTrace stackTrace) {
@@ -44,8 +49,10 @@ class FaceRecognitionService {
   }
 
   Future<void> _load() async {
+    final detector = await _createInterpreter(detectorModelAsset, threads: 4);
     final landmark = await _createInterpreter(landmarkModelAsset, threads: 2);
     final recognition = await _createInterpreter(recognitionModelAsset, threads: 4);
+    _detectorRunner = await IsolateInterpreter.create(address: detector.address, debugName: 'FaceDetector');
     _landmarkRunner = await IsolateInterpreter.create(address: landmark.address, debugName: 'FaceLandmarks');
     _recognitionRunner = await IsolateInterpreter.create(address: recognition.address, debugName: 'FaceRecognition');
   }
@@ -60,19 +67,53 @@ class FaceRecognitionService {
     return interpreter;
   }
 
-  /// 68 face landmarks for a face that ML Kit found at [detectorBox] in [image].
-  /// Returns null when the face is too small or cut off.
-  ///
-  /// The web portal crops with SSD-MobileNet boxes; ML Kit boxes are used as-is
-  /// because re-framing them to the SSD shape did not bring descriptors any
-  /// closer to face-api.js on the reference images.
-  Future<FaceLandmarks68?> detectLandmarks(FaceImage image, FaceRect detectorBox) {
+  /// Faces found by face-api's SSD MobileNet v1, the web portal's face detector.
+  Future<List<DetectedFace>> detectFaces(FaceImage image) {
     return _serial(() async {
-      final crop = detectionCrop(detectorBox, image.width, image.height);
+      final input = squareInput(
+        image,
+        PixelRect(0, 0, image.width, image.height),
+        ssdInputSize,
+        center: false,
+      );
+      final raw = await _run(_detectorRunner, input, _detectorOutputLength);
+      return decodeSsdDetections(raw, imageWidth: image.width, imageHeight: image.height);
+    });
+  }
+
+  /// Describes the face that ML Kit is tracking at [trackedBox] exactly like
+  /// the web portal: SSD detection -> landmarks -> 128-d descriptor. Returns
+  /// null when the SSD detector does not find that face, or it is cut off.
+  Future<FaceDescription?> describeFace(FaceImage image, FaceRect trackedBox) async {
+    final faces = await detectFaces(image);
+    DetectedFace? match;
+    var bestOverlap = 0.3;
+    for (final face in faces) {
+      final overlap = _overlap(face.box, trackedBox);
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        match = face;
+      }
+    }
+    if (match == null) return null;
+
+    final landmarks = await detectLandmarks(image, match.box);
+    if (landmarks == null) return null;
+    final descriptor = await computeDescriptor(image, landmarks);
+    if (descriptor == null) return null;
+    return FaceDescription(match.box, landmarks, descriptor);
+  }
+
+  /// 68 face landmarks for the face at [faceBox] in [image]: an SSD box when
+  /// describing a face, or the cheaper ML Kit box for live head-turn tracking.
+  /// Returns null when the face is too small or cut off.
+  Future<FaceLandmarks68?> detectLandmarks(FaceImage image, FaceRect faceBox) {
+    return _serial(() async {
+      final crop = detectionCrop(faceBox, image.width, image.height);
       if (crop.width < 32 || crop.height < 32) return null;
       final input = squareInput(image, crop, landmarkInputSize);
       final raw = await _run(_landmarkRunner, input, 136);
-      return decodeLandmarks(raw, crop, detectorBox, inputSize: landmarkInputSize);
+      return decodeLandmarks(raw, crop, faceBox, inputSize: landmarkInputSize);
     });
   }
 
@@ -104,4 +145,22 @@ class FaceRecognitionService {
     _queue = result.then<void>((_) {}, onError: (_) {});
     return result;
   }
+
+  static double _overlap(FaceRect a, FaceRect b) {
+    final w = math.max(0.0, math.min(a.right, b.right) - math.max(a.x, b.x));
+    final h = math.max(0.0, math.min(a.bottom, b.bottom) - math.max(a.y, b.y));
+    final intersection = w * h;
+    final union = a.width * a.height + b.width * b.height - intersection;
+    return union <= 0 ? 0.0 : intersection / union;
+  }
+}
+
+/// A face described with the web portal's pipeline.
+class FaceDescription {
+  const FaceDescription(this.box, this.landmarks, this.descriptor);
+
+  /// SSD detection box in image pixels.
+  final FaceRect box;
+  final FaceLandmarks68 landmarks;
+  final Float32List descriptor;
 }

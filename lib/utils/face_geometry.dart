@@ -180,10 +180,11 @@ PixelRect detectionCrop(FaceRect box, int imageWidth, int imageHeight) => clipAt
       imageHeight,
     );
 
-/// face-api `imageToSquare(crop, size, centerImage: true)` + `fromPixels`: the
-/// longer side is scaled to [size], centred on a black square and bilinearly
-/// sampled like a 2D canvas draw. Returns `size * size * 3` RGB values.
-Float32List squareInput(FaceImage image, PixelRect crop, int size) {
+/// face-api `imageToSquare(crop, size, centerImage)` + `fromPixels`: the longer
+/// side is scaled to [size] on a black square and bilinearly sampled like a 2D
+/// canvas draw - centred (landmark / recognition nets) or top-left aligned
+/// (`center: false`, the SSD face detector). Returns `size * size * 3` RGB values.
+Float32List squareInput(FaceImage image, PixelRect crop, int size, {bool center = true}) {
   final out = Float32List(size * size * 3);
   if (crop.isEmpty) return out;
 
@@ -193,8 +194,8 @@ Float32List squareInput(FaceImage image, PixelRect crop, int size) {
   final drawnW = w * scale;
   final drawnH = h * scale;
   final offset = (drawnW - drawnH).abs() / 2;
-  final dx = drawnW < drawnH ? offset : 0.0;
-  final dy = drawnH < drawnW ? offset : 0.0;
+  final dx = center && drawnW < drawnH ? offset : 0.0;
+  final dy = center && drawnH < drawnW ? offset : 0.0;
 
   final xs = _SampleAxis(size, dx, drawnW, scale, w);
   final ys = _SampleAxis(size, dy, drawnH, scale, h);
