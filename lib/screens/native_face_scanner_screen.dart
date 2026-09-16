@@ -19,8 +19,8 @@ import '../utils/ist_helper.dart';
 
 // Head-turn thresholds from the web portal (Attendance.jsx), applied to the same
 // landmark-based yaw ratio: dist(noseTip, jaw[2]) / dist(noseTip, jaw[14]).
-const double _yawPortalLeftThreshold = 0.65;
-const double _yawPortalRightThreshold = 1.50;
+const double _yawPortalLeftThreshold = 0.68;
+const double _yawPortalRightThreshold = 1.45;
 const double _yawCenterMin = 0.85;
 const double _yawCenterMax = 1.15;
 // Only identify from a roughly frontal face.
@@ -698,6 +698,9 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
         _isRecordingAttendance = false;
         _accessDeniedMessage = message;
         _statusMessage = 'Verification failed. Try again.';
+        _lookingCenter = true;
+        _portalLeftDescriptor = null;
+        _portalRightDescriptor = null;
       });
       _accessDeniedTimer?.cancel();
       _accessDeniedTimer = Timer(const Duration(seconds: 5), () {
@@ -1338,11 +1341,13 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     final guideWidth = size.width * 0.72;
     final guideHeight = guideWidth * 1.25;
 
-    final Color ringColor = _livenessVerified || _identifiedEmployee != null
-        ? const Color(0xFF10B981)
-        : _faceDetected
-            ? const Color(0xFF38BDF8)
-            : const Color(0xFF64748B);
+    final Color ringColor = _accessDeniedMessage != null
+        ? const Color(0xFFEF4444)
+        : _livenessVerified || _identifiedEmployee != null
+            ? const Color(0xFF10B981)
+            : _faceDetected
+                ? const Color(0xFF38BDF8)
+                : const Color(0xFF64748B);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 140),
@@ -1361,11 +1366,21 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
                     borderRadius: BorderRadius.circular(guideWidth / 2),
                     border: Border.all(
                       color: ringColor,
-                      width: _livenessVerified ? 4.0 : 3.0,
+                      width: _accessDeniedMessage != null
+                          ? 3.5
+                          : _livenessVerified
+                              ? 4.0
+                              : 3.0,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: ringColor.withValues(alpha: _livenessVerified ? 0.45 : 0.25),
+                        color: ringColor.withValues(
+                          alpha: _accessDeniedMessage != null
+                              ? 0.35
+                              : _livenessVerified
+                                  ? 0.45
+                                  : 0.25,
+                        ),
                         blurRadius: 24,
                         spreadRadius: 2,
                       ),
@@ -1423,19 +1438,19 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
               children: [
                 _buildLivenessAngleBadge(
                   label: 'Face ID',
-                  isDone: _identifiedEmployee != null,
+                  isDone: _identifiedEmployee != null && _accessDeniedMessage == null,
                   icon: Icons.face_rounded,
                 ),
                 const SizedBox(width: 8),
                 _buildLivenessAngleBadge(
                   label: 'Turn Left',
-                  isDone: _userTurnedLeft,
+                  isDone: _userTurnedLeft && _accessDeniedMessage == null,
                   icon: Icons.arrow_back_rounded,
                 ),
                 const SizedBox(width: 8),
                 _buildLivenessAngleBadge(
                   label: 'Turn Right',
-                  isDone: _userTurnedRight,
+                  isDone: _userTurnedRight && _accessDeniedMessage == null,
                   icon: Icons.arrow_forward_rounded,
                 ),
               ],
@@ -1457,11 +1472,13 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    _livenessVerified
-                        ? Icons.verified_user_rounded
-                        : _faceDetected
-                            ? Icons.check_circle_outline_rounded
-                            : Icons.info_outline_rounded,
+                    _accessDeniedMessage != null
+                        ? Icons.error_outline_rounded
+                        : _livenessVerified
+                            ? Icons.verified_user_rounded
+                            : _faceDetected
+                                ? Icons.check_circle_outline_rounded
+                                : Icons.info_outline_rounded,
                     size: 15,
                     color: ringColor,
                   ),
@@ -1475,7 +1492,11 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
                         fontFamily: 'Poppins',
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: _livenessVerified ? const Color(0xFF34D399) : Colors.white,
+                        color: _accessDeniedMessage != null
+                            ? const Color(0xFFF87171)
+                            : _livenessVerified
+                                ? const Color(0xFF34D399)
+                                : Colors.white,
                       ),
                     ),
                   ),

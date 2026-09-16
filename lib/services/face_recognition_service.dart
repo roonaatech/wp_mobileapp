@@ -87,7 +87,7 @@ class FaceRecognitionService {
   Future<FaceDescription?> describeFace(FaceImage image, FaceRect trackedBox) async {
     final faces = await detectFaces(image);
     DetectedFace? match;
-    var bestOverlap = 0.3;
+    var bestOverlap = 0.25;
     for (final face in faces) {
       final overlap = _overlap(face.box, trackedBox);
       if (overlap > bestOverlap) {
@@ -95,13 +95,13 @@ class FaceRecognitionService {
         match = face;
       }
     }
-    if (match == null) return null;
 
-    final landmarks = await detectLandmarks(image, match.box);
+    final effectiveBox = match?.box ?? trackedBox;
+    final landmarks = await detectLandmarks(image, effectiveBox);
     if (landmarks == null) return null;
     final descriptor = await computeDescriptor(image, landmarks);
     if (descriptor == null) return null;
-    return FaceDescription(match.box, landmarks, descriptor);
+    return FaceDescription(effectiveBox, landmarks, descriptor);
   }
 
   /// 68 face landmarks for the face at [faceBox] in [image]: an SSD box when
