@@ -1437,19 +1437,19 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 _buildLivenessAngleBadge(
-                  label: 'Face ID',
+                  label: '1. Face ID',
                   isDone: _identifiedEmployee != null && _accessDeniedMessage == null,
                   icon: Icons.face_rounded,
                 ),
                 const SizedBox(width: 8),
                 _buildLivenessAngleBadge(
-                  label: 'Turn Left',
+                  label: '2. Turn Left',
                   isDone: _userTurnedLeft && _accessDeniedMessage == null,
                   icon: Icons.arrow_back_rounded,
                 ),
                 const SizedBox(width: 8),
                 _buildLivenessAngleBadge(
-                  label: 'Turn Right',
+                  label: '3. Turn Right',
                   isDone: _userTurnedRight && _accessDeniedMessage == null,
                   icon: Icons.arrow_forward_rounded,
                 ),

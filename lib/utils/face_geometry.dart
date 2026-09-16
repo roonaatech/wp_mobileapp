@@ -293,13 +293,11 @@ class FaceLandmarks68 {
     final refY = (leftEye.$2 + rightEye.$2 + mouth.$2) / 3;
     final rx = math.max(0.0, refX - 0.5 * size).floor();
     final ry = math.max(0.0, refY - 0.43 * size).floor();
-    final rw = math.min(size, cropWidth + rx);
-    final rh = math.min(size, cropHeight + ry);
     return clipAtImageBorders(
       rx.toDouble(),
       ry.toDouble(),
-      rw.toDouble(),
-      rh.toDouble(),
+      size.toDouble(),
+      size.toDouble(),
       imageWidth,
       imageHeight,
     );
