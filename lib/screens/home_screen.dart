@@ -8,6 +8,7 @@ import 'apply_leave_screen.dart';
 import 'apply_timeoff_screen.dart';
 import 'on_duty_screen.dart';
 import 'face_attendance_screen.dart';
+import 'my_attendance_badge_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -26,15 +27,14 @@ class _HomeScreenState extends State<HomeScreen> {
       // If tapping Home while on Home, refresh
       _dashboardKey.currentState?._loadLeaves();
     } else {
-      if (index == 2) {
+      if (index == 3) {
         // Reset Time-Off screen when navigating to it
         _timeOffKey = UniqueKey();
       }
       setState(() {
         _currentIndex = index;
       });
-      // If coming back to home, maybe refresh? 
-      // IndexedStack keeps state, so we might want to refresh explicitly if we want fresh data every time we visit Home.
+      // If coming back to home, refresh
       if (index == 0) {
          _dashboardKey.currentState?._loadLeaves();
       }
@@ -115,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    if (_currentIndex >= 4) {
+    if (_currentIndex >= 5) {
       _currentIndex = 0;
     }
 
@@ -124,6 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
           index: _currentIndex,
           children: [
             LeaveDashboard(key: _dashboardKey),
+            const MyAttendanceBadgeScreen(),
             ApplyLeaveScreen(onSuccess: _goToHomeAndRefresh),
             ApplyTimeOffScreen(key: _timeOffKey, onSuccess: _goToHomeAndRefresh),
             OnDutyScreen(onVisitEnded: _goToHomeAndRefresh),
@@ -151,19 +152,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 index: 0,
               ),
               _buildNavItem(
+                icon: Icons.qr_code_2_rounded, 
+                label: 'Badge', 
+                index: 1,
+              ),
+              _buildNavItem(
                 icon: Icons.calendar_month_outlined, 
                 label: 'Leave', 
-                index: 1,
+                index: 2,
               ),
               _buildNavItem(
                 icon: Icons.access_time, 
                 label: 'Time-Off', 
-                index: 2,
+                index: 3,
               ),
               _buildNavItem(
                 icon: Icons.business_center_outlined, 
                 label: 'On-Duty', 
-                index: 3,
+                index: 4,
               ),
             ],
           ),
@@ -1187,6 +1193,16 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                   ),
                   Row(
                     children: [
+                      IconButton(
+                        icon: const Icon(Icons.qr_code_2_rounded, color: Colors.white),
+                        tooltip: 'My Smart Badge',
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const MyAttendanceBadgeScreen()),
+                          );
+                        },
+                      ),
                       // Settings Menu (only show if WorkPulse-only user)
                       if (authService.isWorkPulseOnlyUser)
                         PopupMenuButton<String>(
@@ -1218,6 +1234,91 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                 ],
               ),
             ],
+          ),
+        ),
+
+        // Smart Badge Quick Action Banner
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const MyAttendanceBadgeScreen()),
+              );
+            },
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.35)),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF38BDF8).withOpacity(0.12),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF6366F1), Color(0xFF06B6D4)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.qr_code_2_rounded, color: Colors.white, size: 24),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              'My Attendance Badge',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              '• LIVE',
+                              style: TextStyle(
+                                color: Color(0xFF10B981),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Tap to scan at front desk kiosk',
+                          style: TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded, color: Color(0xFF38BDF8), size: 22),
+                ],
+              ),
+            ),
           ),
         ),
 

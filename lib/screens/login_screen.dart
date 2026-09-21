@@ -21,7 +21,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   var _isLoading = false;
-  bool _obscurePassword = true;
   bool _rememberMe = false;
   String _versionInfo = "";
 
@@ -1049,19 +1048,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               // Password Field
                               TextFormField(
                                 controller: _passwordController,
-                                obscureText: _obscurePassword,
+                                obscureText: true,
                                 decoration: InputDecoration(
                                   hintText: 'Password',
                                   hintStyle: TextStyle(color: Colors.grey.shade400),
                                   filled: true,
                                   fillColor: const Color(0xFFF9FAFB),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                                      color: Colors.grey.shade400,
-                                    ),
-                                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                                  ),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(16),
                                     borderSide: BorderSide(color: Colors.grey.shade100),

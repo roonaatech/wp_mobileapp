@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
 import '../config/app_config.dart';
 import 'activity_logger.dart';
+import '../utils/device_helper.dart';
 
 /// Creates an HTTP client that can handle self-signed SSL certificates
 http.Client _createHttpClient() {
@@ -727,12 +728,19 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
-  /// Identify an employee from a 128-d face descriptor, exactly like the web
-  /// attendance portal. Returns `{matched, email, employeeName, distance}`.
-  Future<Map<String, dynamic>> identifyFace(List<double> faceDescriptor) async {
+  /// Identify an employee from a face snapshot image or 128-d face descriptor.
+  /// Returns `{matched, email, employeeName, distance}`.
+  Future<Map<String, dynamic>> identifyFace({
+    List<double>? faceDescriptor,
+    String? snapshotImage,
+  }) async {
     if (token == null) {
       throw Exception('Not authenticated');
     }
+    final bodyMap = <String, dynamic>{};
+    if (faceDescriptor != null) bodyMap['faceDescriptor'] = faceDescriptor;
+    if (snapshotImage != null) bodyMap['snapshotImage'] = snapshotImage;
+
     final response = await _client
         .post(
           Uri.parse(AppConfig.identifyFace),
@@ -740,7 +748,7 @@ class AttendanceService with ChangeNotifier {
             'Content-Type': 'application/json',
             'x-access-token': token!,
           },
-          body: json.encode({'faceDescriptor': faceDescriptor}),
+          body: json.encode(bodyMap),
         )
         .timeout(const Duration(seconds: 20));
 
@@ -758,10 +766,12 @@ class AttendanceService with ChangeNotifier {
   Future<Map<String, dynamic>> checkInOutWithFace({
     required String email,
     required String action,
-    required List<double> faceDescriptor,
+    List<double>? faceDescriptor,
     List<double>? faceDescriptorLeft,
     List<double>? faceDescriptorRight,
     String? snapshotImage,
+    String? imageLeft,
+    String? imageRight,
     String? password,
     bool livenessVerified = false,
     double? latitude,
@@ -771,25 +781,35 @@ class AttendanceService with ChangeNotifier {
     if (token == null) {
       throw Exception('Not authenticated');
     }
+    final deviceId = await DeviceHelper.getDeviceId();
+    final deviceName = await DeviceHelper.getDeviceName();
+
     final response = await _client
         .post(
           Uri.parse(AppConfig.checkInOutWithFace),
           headers: {
             'Content-Type': 'application/json',
             'x-access-token': token!,
+            'x-is-mobile': 'true',
+            'x-device-id': deviceId,
+            'x-device-name': deviceName,
           },
           body: json.encode({
             'email': email,
             'action': action,
-            'faceDescriptor': faceDescriptor,
+            'deviceId': deviceId,
+            'deviceName': deviceName,
+            if (faceDescriptor != null) 'faceDescriptor': faceDescriptor,
             if (faceDescriptorLeft != null) 'faceDescriptorLeft': faceDescriptorLeft,
             if (faceDescriptorRight != null) 'faceDescriptorRight': faceDescriptorRight,
             if (snapshotImage != null) 'snapshotImage': snapshotImage,
+            if (imageLeft != null) 'imageLeft': imageLeft,
+            if (imageRight != null) 'imageRight': imageRight,
             if (password != null) 'password': password,
             if (livenessVerified) 'livenessVerified': true,
             'latitude': latitude?.toString(),
             'longitude': longitude?.toString(),
-            'phone_model': phoneModel ?? 'WorkPulse Mobile Kiosk',
+            'phone_model': phoneModel ?? deviceName,
           }),
         )
         .timeout(const Duration(seconds: 30));
@@ -797,6 +817,73 @@ class AttendanceService with ChangeNotifier {
     final responseBody = _decodeJsonObject(response.body);
     if (response.statusCode != 200) {
       throw Exception(responseBody['message'] ?? 'Failed to record attendance (${response.statusCode})');
+    }
+    notifyListeners();
+    return responseBody;
+  }
+
+  /// Fetch dynamic signed QR badge data for the logged-in employee
+  Future<Map<String, dynamic>> getMyAttendanceBadge() async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final deviceId = await DeviceHelper.getDeviceId();
+    final deviceName = await DeviceHelper.getDeviceName();
+
+    final uri = Uri.parse(AppConfig.myAttendanceBadge).replace(queryParameters: {
+      'deviceId': deviceId,
+      'deviceName': deviceName,
+    });
+
+    final response = await _client
+        .get(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': token!,
+            'x-is-mobile': 'true',
+            'x-device-id': deviceId,
+            'x-device-name': deviceName,
+          },
+        )
+        .timeout(const Duration(seconds: 15));
+
+    final responseBody = _decodeJsonObject(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(responseBody['message'] ?? 'Failed to load employee badge (${response.statusCode})');
+    }
+    return responseBody;
+  }
+
+  /// Scan dynamic QR badge at terminal kiosk to record check-in/check-out
+  Future<Map<String, dynamic>> scanQrBadgeAttendance({
+    required String qrPayload,
+    double? latitude,
+    double? longitude,
+    String? phoneModel,
+  }) async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final response = await _client
+        .post(
+          Uri.parse(AppConfig.scanQrBadgeAttendance),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': token!,
+          },
+          body: json.encode({
+            'qrPayload': qrPayload,
+            if (latitude != null) 'latitude': latitude.toString(),
+            if (longitude != null) 'longitude': longitude.toString(),
+            'phone_model': phoneModel ?? 'WorkPulse Mobile Kiosk',
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    final responseBody = _decodeJsonObject(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(responseBody['message'] ?? 'Badge scan failed (${response.statusCode})');
     }
     notifyListeners();
     return responseBody;

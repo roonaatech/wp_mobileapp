@@ -5,8 +5,10 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
@@ -16,6 +18,8 @@ import '../utils/camera_face_frame.dart';
 import '../utils/face_geometry.dart';
 import '../utils/face_snapshot.dart';
 import '../utils/ist_helper.dart';
+
+enum ScannerMode { qrBadge, faceId }
 
 // Head-turn thresholds from the web portal (Attendance.jsx), applied to the same
 // landmark-based yaw ratio: dist(noseTip, jaw[2]) / dist(noseTip, jaw[14]).
@@ -86,6 +90,7 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
   int _failedAttempts = 0;
   Map<String, String>? _identifiedEmployee; // {email, employeeName}
   Float32List? _frontDescriptor;
+  String? _frontSnap;
   Map<String, dynamic>? _attendanceStatus;
   bool _isLoadingStatus = false;
 
@@ -96,11 +101,15 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
   bool _capturingProfile = false;
   Float32List? _portalLeftDescriptor;
   Float32List? _portalRightDescriptor;
+  String? _portalLeftSnap;
+  String? _portalRightSnap;
   CameraFaceFrame? _livenessFrame;
 
-  bool get _userTurnedLeft => _portalRightDescriptor != null;
-  bool get _userTurnedRight => _portalLeftDescriptor != null;
-  bool get _livenessVerified => _portalLeftDescriptor != null && _portalRightDescriptor != null;
+  bool get _userTurnedLeft => _portalRightDescriptor != null || _portalRightSnap != null;
+  bool get _userTurnedRight => _portalLeftDescriptor != null || _portalLeftSnap != null;
+  bool get _livenessVerified =>
+      (_portalLeftDescriptor != null || _portalLeftSnap != null) &&
+      (_portalRightDescriptor != null || _portalRightSnap != null);
 
   // Password fallback
   bool _passwordMode = false;
@@ -118,14 +127,21 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
   final ValueNotifier<int> _resetCountdownNotifier = ValueNotifier<int>(4);
   Timer? _autoResetTimer;
 
+  ScannerMode _scannerMode = ScannerMode.qrBadge;
+  final BarcodeScanner _barcodeScanner = BarcodeScanner(formats: [BarcodeFormat.qrCode]);
+  bool _isProcessingQr = false;
+  String? _lastScannedPayload;
+  DateTime _lastQrScanTime = DateTime.fromMillisecondsSinceEpoch(0);
+
   bool get _isActive => mounted && !_isDisposed;
 
-  bool get _canProcessFrames =>
-      _isActive &&
-      _modelsReady &&
-      !_isRecordingAttendance &&
-      !_livenessVerified &&
-      _accessDeniedMessage == null;
+  bool get _canProcessFrames {
+    if (!_isActive || _isRecordingAttendance || _accessDeniedMessage != null) return false;
+    if (_scannerMode == ScannerMode.qrBadge) {
+      return !_isProcessingQr;
+    }
+    return _modelsReady && !_livenessVerified;
+  }
 
   @override
   void initState() {
@@ -179,6 +195,7 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     _scanAnimController.dispose();
     _releaseCamera();
     _faceDetector.close();
+    _barcodeScanner.close();
     _resetCountdownNotifier.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -322,6 +339,25 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
       );
       if (frame == null) return;
 
+      if (_scannerMode == ScannerMode.qrBadge) {
+        if (_isProcessingQr || _isRecordingAttendance) return;
+        try {
+          final barcodes = await _barcodeScanner.processImage(frame.inputImage);
+          if (!_canProcessFrames || _isProcessingQr) return;
+
+          for (final barcode in barcodes) {
+            final raw = barcode.rawValue;
+            if (raw != null && raw.startsWith('WPQR.')) {
+              await _handleQrAttendance(raw);
+              break;
+            }
+          }
+        } catch (e) {
+          debugPrint('QR barcode frame processing error: $e');
+        }
+        return;
+      }
+
       final faces = await _faceDetector.processImage(frame.inputImage);
       if (!_canProcessFrames) return;
 
@@ -389,9 +425,12 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
       _lookingCenter = true;
       _portalLeftDescriptor = null;
       _portalRightDescriptor = null;
+      _portalLeftSnap = null;
+      _portalRightSnap = null;
       if (!_passwordMode && _identifiedEmployee != null) {
         _identifiedEmployee = null;
         _frontDescriptor = null;
+        _frontSnap = null;
         _attendanceStatus = null;
         _isLoadingStatus = false;
       }
@@ -423,11 +462,23 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     }
 
     try {
+      // Encode snapshot image for unified server-side biometrics
+      String? snap;
+      try {
+        snap = await encodeSnapshotDataUrl(frame.image);
+      } catch (e) {
+        debugPrint('Snapshot encoding failed: $e');
+      }
+
       // Same detector -> landmarks -> descriptor pipeline as the web portal.
       final descriptor = (await _engine.describeFace(frame.image, box))?.descriptor;
-      if (descriptor == null || !_canProcessFrames) return;
+      if (!_canProcessFrames) return;
+      if (descriptor == null && snap == null) return;
 
-      final result = await attendanceService.identifyFace(descriptor);
+      final result = await attendanceService.identifyFace(
+        faceDescriptor: descriptor,
+        snapshotImage: snap,
+      );
       if (!_canProcessFrames) return;
 
       if (result['matched'] == true) {
@@ -446,10 +497,13 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
         setState(() {
           _identifiedEmployee = {'email': email, 'employeeName': employeeName};
           _frontDescriptor = descriptor;
+          _frontSnap = snap;
           _failedAttempts = 0;
           _lookingCenter = true;
           _portalLeftDescriptor = null;
           _portalRightDescriptor = null;
+          _portalLeftSnap = null;
+          _portalRightSnap = null;
           _attendanceStatus = null;
           _isLoadingStatus = true;
           _statusMessage = 'Recognized: $employeeName. Turn your head left and right.';
@@ -497,15 +551,24 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     if ((capturePortalLeft || capturePortalRight) && _lookingCenter) {
       _capturingProfile = true;
       try {
+        String? snap;
+        try {
+          snap = await encodeSnapshotDataUrl(frame.image);
+        } catch (e) {
+          debugPrint('Profile snapshot encoding failed: $e');
+        }
+
         // Profile descriptors use the web portal's detector pipeline as well.
         final descriptor = (await _engine.describeFace(frame.image, box))?.descriptor;
-        if (descriptor == null || !_canProcessFrames || _identifiedEmployee == null) return;
+        if (!_canProcessFrames || _identifiedEmployee == null) return;
         setState(() {
           _lookingCenter = false;
           if (capturePortalLeft) {
             _portalLeftDescriptor = descriptor;
+            _portalLeftSnap = snap;
           } else {
             _portalRightDescriptor = descriptor;
+            _portalRightSnap = snap;
           }
           if (_livenessVerified) {
             _livenessFrame = frame;
@@ -572,6 +635,9 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
       faceDescriptorLeft: _portalLeftDescriptor,
       faceDescriptorRight: _portalRightDescriptor,
       frame: frame,
+      imageLeft: _portalLeftSnap,
+      imageRight: _portalRightSnap,
+      snapshotImage: _frontSnap,
       livenessVerified: true,
       status: _attendanceStatus,
     );
@@ -606,9 +672,15 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     setState(() {
       _statusMessage = 'Scanning face. Look directly at the camera...';
     });
+    String? snap;
+    try {
+      snap = await encodeSnapshotDataUrl(frame.image);
+    } catch (e) {
+      debugPrint('Fallback snapshot encoding failed: $e');
+    }
     final descriptor = (await _engine.describeFace(frame.image, box))?.descriptor;
     if (!_isActive) return;
-    if (descriptor == null) {
+    if (descriptor == null && snap == null) {
       _showSnack('Position your face inside the frame.');
       return;
     }
@@ -617,11 +689,87 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
       email: email,
       employeeName: _fallbackStatus?['employeeName']?.toString() ?? email,
       action: action,
-      faceDescriptor: descriptor,
+      faceDescriptor: descriptor ?? Float32List(0),
       frame: frame,
+      snapshotImage: snap,
       password: password,
       status: _fallbackStatus,
     );
+  }
+
+  Future<void> _handleQrAttendance(String qrPayload) async {
+    if (_isProcessingQr || _isRecordingAttendance) return;
+    final now = DateTime.now();
+    if (_lastScannedPayload == qrPayload && now.difference(_lastQrScanTime).inSeconds < 3) {
+      return;
+    }
+    _lastScannedPayload = qrPayload;
+    _lastQrScanTime = now;
+    _isProcessingQr = true;
+
+    HapticFeedback.mediumImpact();
+    SystemSound.play(SystemSoundType.click);
+
+    setState(() {
+      _isRecordingAttendance = true;
+      _statusMessage = 'Verifying Smart Badge...';
+    });
+
+    try {
+      final attendanceService = Provider.of<AttendanceService>(context, listen: false);
+      final position = await _currentPosition();
+      final phoneModel = await _phoneModel();
+
+      final result = await attendanceService.scanQrBadgeAttendance(
+        qrPayload: qrPayload,
+        latitude: position?.latitude,
+        longitude: position?.longitude,
+        phoneModel: phoneModel,
+      );
+
+      if (!_isActive) return;
+
+      final recordedAction = result['type']?.toString() ?? 'CHECK_IN';
+      final employeeName = result['employeeName']?.toString() ?? 'Employee';
+      final timestamp = result['timestamp'] != null
+          ? ISTHelper.formatTime(DateTime.tryParse(result['timestamp'].toString()) ?? DateTime.now())
+          : ISTHelper.formatTime(DateTime.now());
+      final duration = result['duration']?.toString();
+
+      HapticFeedback.heavyImpact();
+
+      setState(() {
+        _isRecordingAttendance = false;
+        _statusMessage = '${recordedAction == 'CHECK_IN' ? 'Check-In' : 'Check-Out'} logged!';
+      });
+
+      await _showCelebrationDialog(
+        action: recordedAction,
+        employeeName: employeeName,
+        timestamp: timestamp,
+        duration: duration,
+      );
+    } catch (e) {
+      if (!_isActive) return;
+      HapticFeedback.vibrate();
+      final message = e.toString().replaceFirst('Exception: ', '');
+      setState(() {
+        _isRecordingAttendance = false;
+        _accessDeniedMessage = message;
+        _statusMessage = 'Badge verification failed';
+      });
+      _accessDeniedTimer?.cancel();
+      _accessDeniedTimer = Timer(const Duration(seconds: 4), () {
+        if (_isActive) {
+          setState(() {
+            _accessDeniedMessage = null;
+            _statusMessage = 'Hold Smart Badge in front of camera';
+          });
+        }
+      });
+    } finally {
+      _isProcessingQr = false;
+    }
   }
 
   Future<void> _recordAttendance({
@@ -632,6 +780,9 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     required CameraFaceFrame frame,
     Float32List? faceDescriptorLeft,
     Float32List? faceDescriptorRight,
+    String? imageLeft,
+    String? imageRight,
+    String? snapshotImage,
     bool livenessVerified = false,
     String? password,
     Map<String, dynamic>? status,
@@ -645,11 +796,13 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
       _statusMessage = 'Logging ${isCheckIn ? 'Check-In' : 'Check-Out'}...';
     });
 
-    String? snapshot;
-    try {
-      snapshot = await encodeSnapshotDataUrl(frame.image);
-    } catch (e) {
-      debugPrint('Snapshot encoding failed: $e');
+    String? snapshot = snapshotImage;
+    if (snapshot == null) {
+      try {
+        snapshot = await encodeSnapshotDataUrl(frame.image);
+      } catch (e) {
+        debugPrint('Snapshot encoding failed: $e');
+      }
     }
     final position = await _currentPosition();
     final phoneModel = await _phoneModel();
@@ -658,10 +811,12 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
       final result = await attendanceService.checkInOutWithFace(
         email: email,
         action: action,
-        faceDescriptor: faceDescriptor,
+        faceDescriptor: faceDescriptor.isNotEmpty ? faceDescriptor : null,
         faceDescriptorLeft: faceDescriptorLeft,
         faceDescriptorRight: faceDescriptorRight,
         snapshotImage: snapshot,
+        imageLeft: imageLeft ?? _portalLeftSnap,
+        imageRight: imageRight ?? _portalRightSnap,
         password: password,
         livenessVerified: livenessVerified,
         latitude: position?.latitude,
@@ -701,6 +856,8 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
         _lookingCenter = true;
         _portalLeftDescriptor = null;
         _portalRightDescriptor = null;
+        _portalLeftSnap = null;
+        _portalRightSnap = null;
       });
       _accessDeniedTimer?.cancel();
       _accessDeniedTimer = Timer(const Duration(seconds: 5), () {
@@ -753,11 +910,14 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
       _faceDetected = false;
       _identifiedEmployee = null;
       _frontDescriptor = null;
+      _frontSnap = null;
       _attendanceStatus = null;
       _isLoadingStatus = false;
       _lookingCenter = true;
       _portalLeftDescriptor = null;
       _portalRightDescriptor = null;
+      _portalLeftSnap = null;
+      _portalRightSnap = null;
       _livenessFrame = null;
       _latestFrame = null;
       _latestLandmarks = null;
@@ -1176,14 +1336,14 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
             // 1. Camera Viewport Stream
             if (_isPermissionDenied)
               _buildPermissionDeniedView()
-            else if (_modelError != null)
+            else if (_modelError != null && _scannerMode == ScannerMode.faceId)
               _buildModelErrorView()
             else if (!_isCameraInitialized || _cameraController == null || !_cameraController!.value.isInitialized)
               _buildCameraLoadingView()
             else
               _buildCameraPreviewView(),
 
-            // 2. Top Bar (Exit, Live Pill, Flip Camera)
+            // 2. Top Bar (Exit, Live Pill, Flip Camera + Mode Switcher)
             Positioned(
               top: 12,
               left: 16,
@@ -1191,12 +1351,16 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
               child: _buildTopControlBar(),
             ),
 
-            // 3. Central face guide with liveness progress
-            if (_isCameraInitialized && !_isPermissionDenied && _modelError == null)
-              Center(child: _buildFaceScanningGuide()),
+            // 3. Central scanning guide (QR Badge Viewfinder or Face Guide)
+            if (_isCameraInitialized && !_isPermissionDenied && (_scannerMode == ScannerMode.qrBadge || _modelError == null))
+              Center(
+                child: _scannerMode == ScannerMode.qrBadge
+                    ? _buildQrScanningGuide()
+                    : _buildFaceScanningGuide(),
+              ),
 
             // 4. Bottom identification / attendance panel
-            if (!_isPermissionDenied && _modelError == null)
+            if (!_isPermissionDenied && (_scannerMode == ScannerMode.qrBadge || _modelError == null))
               Positioned(
                 left: 0,
                 right: 0,
@@ -1212,7 +1376,15 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
   Widget _buildTopControlBar() {
     final String pillText;
     final Color pillColor;
-    if (_livenessVerified) {
+    if (_scannerMode == ScannerMode.qrBadge) {
+      if (_isRecordingAttendance) {
+        pillText = 'RECORDING BADGE';
+        pillColor = const Color(0xFF10B981);
+      } else {
+        pillText = 'READY TO SCAN';
+        pillColor = const Color(0xFF38BDF8);
+      }
+    } else if (_livenessVerified) {
       pillText = 'LIVENESS VERIFIED';
       pillColor = const Color(0xFF10B981);
     } else if (_identifiedEmployee != null) {
@@ -1229,87 +1401,189 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
       pillColor = const Color(0xFF38BDF8);
     }
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // Exit Button
-        InkWell(
-          onTap: () => Navigator.of(context).pop(),
-          borderRadius: BorderRadius.circular(30),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0F172A).withValues(alpha: 0.85),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFF334155)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Exit Button
+            InkWell(
+              onTap: () => Navigator.of(context).pop(),
+              borderRadius: BorderRadius.circular(30),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFF334155)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 16),
+                    SizedBox(width: 8),
+                    Text(
+                      'Exit',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 16),
-                SizedBox(width: 8),
-                Text(
-                  'Exit',
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
+
+            // Live Biometric Status Pill
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: pillColor.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: pillColor),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.circle, size: 8, color: pillColor),
+                  const SizedBox(width: 6),
+                  Text(
+                    pillText,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: pillColor,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Flip Camera Toggle
+            if (_cameras.length > 1)
+              InkWell(
+                onTap: _toggleCamera,
+                borderRadius: BorderRadius.circular(30),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.85),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: const Icon(
+                    Icons.flip_camera_ios_rounded,
+                    color: Color(0xFF38BDF8),
+                    size: 20,
                   ),
                 ),
-              ],
-            ),
-          ),
+              )
+            else
+              const SizedBox(width: 40),
+          ],
         ),
+        const SizedBox(height: 10),
 
-        // Live Biometric Status Pill
+        // Mode Switcher Tabs
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: pillColor.withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: pillColor),
+            color: const Color(0xFF0F172A).withValues(alpha: 0.90),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF334155)),
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.circle, size: 8, color: pillColor),
-              const SizedBox(width: 6),
-              Text(
-                pillText,
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: pillColor,
-                  letterSpacing: 0.5,
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      _scannerMode = ScannerMode.qrBadge;
+                      _resetScanner(message: 'Point camera at employee QR badge');
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _scannerMode == ScannerMode.qrBadge
+                          ? const Color(0xFF6366F1)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.qr_code_2_rounded,
+                          color: _scannerMode == ScannerMode.qrBadge ? Colors.white : Colors.grey.shade400,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Smart Badge QR',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: _scannerMode == ScannerMode.qrBadge ? Colors.white : Colors.grey.shade400,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      _scannerMode = ScannerMode.faceId;
+                      _resetScanner(message: 'Stand in front of the camera');
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _scannerMode == ScannerMode.faceId
+                          ? const Color(0xFF6366F1)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.face_rounded,
+                          color: _scannerMode == ScannerMode.faceId ? Colors.white : Colors.grey.shade400,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Face ID',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: _scannerMode == ScannerMode.faceId ? Colors.white : Colors.grey.shade400,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],
           ),
         ),
-
-        // Flip Camera Toggle
-        if (_cameras.length > 1)
-          InkWell(
-            onTap: _toggleCamera,
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F172A).withValues(alpha: 0.85),
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF334155)),
-              ),
-              child: const Icon(
-                Icons.flip_camera_ios_rounded,
-                color: Color(0xFF38BDF8),
-                size: 20,
-              ),
-            ),
-          )
-        else
-          const SizedBox(width: 40),
       ],
     );
   }
@@ -1332,6 +1606,180 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildQrScanningGuide() {
+    final size = MediaQuery.of(context).size;
+    final boxSize = size.width * 0.68;
+    final Color ringColor = _accessDeniedMessage != null
+        ? const Color(0xFFEF4444)
+        : _isRecordingAttendance
+            ? const Color(0xFF10B981)
+            : const Color(0xFF38BDF8);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 120),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: boxSize,
+            height: boxSize,
+            child: Stack(
+              children: [
+                // Viewfinder Border with Rounded Corners
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: ringColor.withValues(alpha: 0.7),
+                      width: 2.0,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: ringColor.withValues(alpha: 0.2),
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 4 Corner Accents
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(color: ringColor, width: 4.5),
+                        left: BorderSide(color: ringColor, width: 4.5),
+                      ),
+                      borderRadius: const BorderRadius.only(topLeft: Radius.circular(20)),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(color: ringColor, width: 4.5),
+                        right: BorderSide(color: ringColor, width: 4.5),
+                      ),
+                      borderRadius: const BorderRadius.only(topRight: Radius.circular(20)),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: ringColor, width: 4.5),
+                        left: BorderSide(color: ringColor, width: 4.5),
+                      ),
+                      borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(20)),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: ringColor, width: 4.5),
+                        right: BorderSide(color: ringColor, width: 4.5),
+                      ),
+                      borderRadius: const BorderRadius.only(bottomRight: Radius.circular(20)),
+                    ),
+                  ),
+                ),
+
+                // Center crosshair
+                Center(
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: ringColor.withValues(alpha: 0.4), width: 1.5),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+
+                // Animated Laser Line
+                AnimatedBuilder(
+                  animation: _scanAnimation,
+                  builder: (context, child) {
+                    return Positioned(
+                      top: _scanAnimation.value * (boxSize - 16),
+                      left: 8,
+                      right: 8,
+                      child: Container(
+                        height: 3,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              ringColor.withValues(alpha: 0.1),
+                              ringColor,
+                              ringColor.withValues(alpha: 0.1),
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: ringColor,
+                              blurRadius: 10,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A).withValues(alpha: 0.88),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF334155)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.qr_code_scanner_rounded, color: Color(0xFF38BDF8), size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  _statusMessage,
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1546,6 +1994,8 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     final Widget content;
     if (_accessDeniedMessage != null) {
       content = _buildAccessDeniedContent();
+    } else if (_scannerMode == ScannerMode.qrBadge) {
+      content = _buildQrScanningContent();
     } else if (_passwordMode) {
       content = _buildPasswordFallbackContent();
     } else if (_identifiedEmployee != null) {
@@ -1589,6 +2039,83 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildQrScanningContent() {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6366F1).withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.qr_code_2_rounded, color: Color(0xFF818CF8), size: 22),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Smart Badge Terminal',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    'Present your phone badge 15-20 cm from camera',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 12,
+                      color: Color(0xFF94A3B8),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF334155)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.verified_rounded, color: Color(0xFF10B981), size: 16),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  '100% reliable instant verification with anti-replay cryptographic tokens.',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 11,
+                    color: Color(0xFFCBD5E1),
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

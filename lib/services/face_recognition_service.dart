@@ -87,12 +87,25 @@ class FaceRecognitionService {
   Future<FaceDescription?> describeFace(FaceImage image, FaceRect trackedBox) async {
     final faces = await detectFaces(image);
     DetectedFace? match;
-    var bestOverlap = 0.25;
+    var bestOverlap = 0.20;
     for (final face in faces) {
       final overlap = _overlap(face.box, trackedBox);
       if (overlap > bestOverlap) {
         bestOverlap = overlap;
         match = face;
+      }
+    }
+
+    if (match == null && faces.isNotEmpty) {
+      var bestDistSq = double.infinity;
+      for (final face in faces) {
+        final dx = face.box.centerX - trackedBox.centerX;
+        final dy = face.box.centerY - trackedBox.centerY;
+        final distSq = dx * dx + dy * dy;
+        if (distSq < bestDistSq) {
+          bestDistSq = distSq;
+          match = face;
+        }
       }
     }
 

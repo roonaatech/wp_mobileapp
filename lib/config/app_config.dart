@@ -132,6 +132,8 @@ class AppConfig {
   static String get identifyFace => '$apiBaseUrl/api/attendance/identify-face';
   static String get attendanceStaffList => '$apiBaseUrl/api/attendance/staff-list';
   static String get attendanceKioskRecord => '$apiBaseUrl/api/attendance/kiosk-record';
+  static String get myAttendanceBadge => '$apiBaseUrl/api/attendance/my-badge';
+  static String get scanQrBadgeAttendance => '$apiBaseUrl/api/attendance/scan-qr-badge';
 
   /// Base URL for the Face Attendance web portal (kiosk/scanner)
   static String get attendancePortalUrl {
