@@ -855,9 +855,11 @@ class AttendanceService with ChangeNotifier {
     return responseBody;
   }
 
-  /// Scan dynamic QR badge at terminal kiosk to record check-in/check-out
+  /// Scan dynamic QR badge at terminal kiosk to preview or confirm check-in/check-out
   Future<Map<String, dynamic>> scanQrBadgeAttendance({
-    required String qrPayload,
+    String? qrPayload,
+    String? confirmationToken,
+    bool? confirmed,
     double? latitude,
     double? longitude,
     String? phoneModel,
@@ -873,7 +875,9 @@ class AttendanceService with ChangeNotifier {
             'x-access-token': token!,
           },
           body: json.encode({
-            'qrPayload': qrPayload,
+            if (qrPayload != null) 'qrPayload': qrPayload,
+            if (confirmationToken != null) 'confirmationToken': confirmationToken,
+            if (confirmed != null) 'confirmed': confirmed,
             if (latitude != null) 'latitude': latitude.toString(),
             if (longitude != null) 'longitude': longitude.toString(),
             'phone_model': phoneModel ?? 'WorkPulse Mobile Kiosk',

@@ -111,54 +111,98 @@ class AuthService with ChangeNotifier {
 
   Future<bool> tryAutoLogin() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // 1. Check for fresh install or new build/version update
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      final currentBuild = '${packageInfo.version}+${packageInfo.buildNumber}';
+      final lastInstalledBuild = prefs.getString('last_installed_build');
+
+      // If opening for the first time after install or after updating to a new build,
+      // always force the user to see the login screen (do not auto-login).
+      if (lastInstalledBuild == null || lastInstalledBuild != currentBuild) {
+        print('New install or build change detected (stored: $lastInstalledBuild, current: $currentBuild). Showing login page.');
+        await prefs.setString('last_installed_build', currentBuild);
+        _token = null;
+        _userId = null;
+        _userName = null;
+        _userEmail = null;
+        _externalUserId = null;
+        _mustChangePassword = false;
+        _canAccessAttendancePortal = false;
+        _isServiceAccount = false;
+        await prefs.remove('userData');
+        await prefs.remove('token');
+        await prefs.remove('userId');
+        await prefs.remove('userName');
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      print('Error checking package info during auto-login: $e');
+    }
+
     if (!prefs.containsKey('token')) {
       return false;
     }
     _token = prefs.getString('token');
-    _userName = prefs.getString('userName') ?? 'User';
 
-    // Load userData to get externalUserId
+    // Load userData
     final userDataString = prefs.getString('userData');
     if (userDataString != null) {
-      final userData = json.decode(userDataString);
-      final rawExtId = userData['externalUserId'];
-      if (rawExtId != null) {
-        if (rawExtId is int) {
-          _externalUserId = rawExtId;
-        } else {
-          _externalUserId = int.tryParse(rawExtId.toString());
-        }
-      }
-      _mustChangePassword = userData['mustChangePassword'] ?? false;
-      _canAccessAttendancePortal = userData['can_access_attendance_portal'] ?? false;
-      _isServiceAccount = userData['isServiceAccount'] ?? false;
-      _userEmail = userData['email'];
-    }
-
-      notifyListeners();
-
-      // Refresh face attendance permission in background
-      if (_token != null) {
-        refreshFaceAttendancePermission();
-      }
-
-      // Refresh settings using the token just in case public fetch failed or migration not run
       try {
-        final settings = await fetchGlobalSettings(token: _token);
-        if (settings != null) {
-          await ISTHelper.setTimezone(settings['application_timezone']!);
-          await ISTHelper.setFormatSettings(
-            settings['application_date_format']!,
-            settings['application_time_format']!,
-          );
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('leave_past_days_allowed', settings['leave_past_days_allowed'] ?? '0');
+        final userData = json.decode(userDataString);
+        final rawExtId = userData['externalUserId'];
+        if (rawExtId != null) {
+          if (rawExtId is int) {
+            _externalUserId = rawExtId;
+          } else {
+            _externalUserId = int.tryParse(rawExtId.toString());
+          }
+        }
+        _mustChangePassword = userData['mustChangePassword'] ?? false;
+        _canAccessAttendancePortal = userData['can_access_attendance_portal'] ?? false;
+        _isServiceAccount = userData['isServiceAccount'] ?? false;
+        _userEmail = userData['email'];
+        final storedName = userData['userName'] ?? prefs.getString('userName');
+        if (storedName != null && storedName.toString().trim().isNotEmpty) {
+          _userName = storedName.toString().trim();
+        } else {
+          _userName = null;
         }
       } catch (e) {
-        print('Error refreshing settings during auto-login: $e');
+        print('Error decoding userData in tryAutoLogin: $e');
+        _userName = prefs.getString('userName');
       }
+    } else {
+      _userName = prefs.getString('userName');
+    }
 
-      return true;
+    _userId = prefs.getString('userId');
+
+    notifyListeners();
+
+    // Refresh face attendance permission in background
+    if (_token != null) {
+      refreshFaceAttendancePermission();
+    }
+
+    // Refresh settings using the token just in case public fetch failed or migration not run
+    try {
+      final settings = await fetchGlobalSettings(token: _token);
+      if (settings != null) {
+        await ISTHelper.setTimezone(settings['application_timezone']!);
+        await ISTHelper.setFormatSettings(
+          settings['application_date_format']!,
+          settings['application_time_format']!,
+        );
+        await prefs.setString('leave_past_days_allowed', settings['leave_past_days_allowed'] ?? '0');
+      }
+    } catch (e) {
+      print('Error refreshing settings during auto-login: $e');
+    }
+
+    return true;
   }
 
 
@@ -173,7 +217,7 @@ class AuthService with ChangeNotifier {
     
     // Skip version check only in debug mode when using localhost
     // In release mode (isReleaseMode=true), always perform version check
-    final bool skipVersionCheck = !isReleaseMode && useLocalhost;
+    const bool skipVersionCheck = !isReleaseMode && useLocalhost;
     
     // Get current app version (only needed for release builds)
     String? appVersion;
@@ -281,9 +325,16 @@ class AuthService with ChangeNotifier {
         'can_access_attendance_portal': _canAccessAttendancePortal,
         'isServiceAccount': _isServiceAccount,
       });
-      prefs.setString('userData', userData);
-      prefs.setString('token', _token!);
-      prefs.setString('userId', _userId!);
+      await prefs.setString('userData', userData);
+      await prefs.setString('token', _token!);
+      await prefs.setString('userId', _userId!);
+      if (_userName != null && _userName!.trim().isNotEmpty) {
+        await prefs.setString('userName', _userName!.trim());
+      }
+      try {
+        final packageInfo = await PackageInfo.fromPlatform();
+        await prefs.setString('last_installed_build', '${packageInfo.version}+${packageInfo.buildNumber}');
+      } catch (_) {}
 
       // Fetch and store global settings immediately after login
       try {
@@ -335,9 +386,10 @@ class AuthService with ChangeNotifier {
     _isServiceAccount = false;
     
     final prefs = await SharedPreferences.getInstance();
-    prefs.remove('userData');
-    prefs.remove('token');
-    prefs.remove('userId');
+    await prefs.remove('userData');
+    await prefs.remove('token');
+    await prefs.remove('userId');
+    await prefs.remove('userName');
     
     // Call backend logout endpoint to log activity server-side
     if (token != null) {

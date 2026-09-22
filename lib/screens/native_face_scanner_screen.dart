@@ -507,6 +507,79 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
 
       if (!_isActive) return;
 
+      if (result['requiresConfirmation'] == true) {
+        final confirmationToken = result['confirmationToken']?.toString();
+        final action = result['type']?.toString() ?? 'CHECK_IN';
+        final employeeName = result['employeeName']?.toString() ?? 'Employee';
+        final timestamp = result['timestamp']?.toString() ?? '';
+        final duration = result['duration']?.toString();
+
+        setState(() {
+          _isRecordingAttendance = false;
+          _statusMessage = 'Confirmation required';
+        });
+
+        final confirmed = await _showConfirmationDialog(
+          action: action,
+          employeeName: employeeName,
+          timestamp: timestamp,
+          duration: duration,
+        );
+
+        if (!confirmed) {
+          setState(() {
+            _isRecordingAttendance = false;
+            _statusMessage = '${action == 'CHECK_IN' ? 'Check-In' : 'Check-Out'} cancelled';
+          });
+          Timer(const Duration(seconds: 2), () {
+            if (_isActive) {
+              setState(() {
+                _statusMessage = 'Hold Smart Badge in front of camera';
+              });
+            }
+          });
+          return;
+        }
+
+        // Confirmed by user -> execute attendance record
+        setState(() {
+          _isRecordingAttendance = true;
+          _statusMessage = 'Recording ${action == 'CHECK_IN' ? 'Check-In' : 'Check-Out'}...';
+        });
+
+        final confirmResult = await attendanceService.scanQrBadgeAttendance(
+          confirmationToken: confirmationToken,
+          confirmed: true,
+          latitude: position?.latitude,
+          longitude: position?.longitude,
+          phoneModel: phoneModel,
+        );
+
+        if (!_isActive) return;
+
+        final recordedAction = confirmResult['type']?.toString() ?? action;
+        final confEmployeeName = confirmResult['employeeName']?.toString() ?? employeeName;
+        final confTimestamp = confirmResult['timestamp'] != null
+            ? ISTHelper.formatTime(DateTime.tryParse(confirmResult['timestamp'].toString()) ?? DateTime.now())
+            : ISTHelper.formatTime(DateTime.now());
+        final confDuration = confirmResult['duration']?.toString() ?? duration;
+
+        HapticFeedback.heavyImpact();
+
+        setState(() {
+          _isRecordingAttendance = false;
+          _statusMessage = '${recordedAction == 'CHECK_IN' ? 'Check-In' : 'Check-Out'} logged!';
+        });
+
+        await _showCelebrationDialog(
+          action: recordedAction,
+          employeeName: confEmployeeName,
+          timestamp: confTimestamp,
+          duration: confDuration,
+        );
+        return;
+      }
+
       final recordedAction = result['type']?.toString() ?? 'CHECK_IN';
       final employeeName = result['employeeName']?.toString() ?? 'Employee';
       final timestamp = result['timestamp'] != null
@@ -575,6 +648,290 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
       }
     } catch (_) {}
     return 'WorkPulse Mobile Kiosk';
+  }
+
+  Future<bool> _showConfirmationDialog({
+    required String action,
+    required String employeeName,
+    required String timestamp,
+    String? duration,
+  }) async {
+    final isCheckIn = action == 'CHECK_IN';
+    final actionLabel = isCheckIn ? 'Check In' : 'Check Out';
+    final accentColor = isCheckIn ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
+
+    final countdownNotifier = ValueNotifier<int>(15);
+    Timer? dialogTimer;
+
+    dialogTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (countdownNotifier.value > 1) {
+        countdownNotifier.value--;
+      } else {
+        timer.cancel();
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop(false);
+        }
+      }
+    });
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: accentColor,
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: accentColor.withValues(alpha: 0.25),
+                blurRadius: 30,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Glowing Action Icon
+              Container(
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: accentColor.withValues(alpha: 0.15),
+                  border: Border.all(
+                    color: accentColor,
+                    width: 2.5,
+                  ),
+                ),
+                child: Center(
+                  child: Icon(
+                    isCheckIn ? Icons.login_rounded : Icons.logout_rounded,
+                    color: accentColor,
+                    size: 42,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Action Badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: accentColor.withValues(alpha: 0.4)),
+                ),
+                child: Text(
+                  isCheckIn ? 'CHECK-IN CONFIRMATION' : 'CHECK-OUT CONFIRMATION',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.0,
+                    color: accentColor,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Confirmation Question
+              Text(
+                'Confirm $actionLabel?',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 6),
+
+              Text(
+                employeeName,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFE2E8F0),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Details box
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF334155)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Column(
+                      children: [
+                        const Text(
+                          'TIME',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5,
+                            color: Color(0xFF94A3B8),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          timestamp.isNotEmpty ? timestamp : ISTHelper.formatTime(DateTime.now()),
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (duration != null && duration.isNotEmpty) ...[
+                      Container(width: 1, height: 28, color: const Color(0xFF334155)),
+                      Column(
+                        children: [
+                          const Text(
+                            'DURATION',
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                              color: Color(0xFF94A3B8),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            duration,
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFFFBBF24),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Auto-cancel countdown hint
+              ValueListenableBuilder<int>(
+                valueListenable: countdownNotifier,
+                builder: (context, seconds, _) {
+                  return Text(
+                    'Auto-cancelling in ${seconds}s...',
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 11,
+                      color: Color(0xFF64748B),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
+
+              // Action Buttons: NO / YES
+              Row(
+                children: [
+                  // NO Button
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFF475569), width: 1.5),
+                        backgroundColor: const Color(0xFF1E293B),
+                        foregroundColor: const Color(0xFF94A3B8),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () {
+                        dialogTimer?.cancel();
+                        Navigator.of(ctx).pop(false);
+                      },
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.close_rounded, size: 18, color: Color(0xFFEF4444)),
+                          SizedBox(width: 6),
+                          Text(
+                            'NO',
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+
+                  // YES Button
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: accentColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        elevation: 4,
+                        shadowColor: accentColor.withValues(alpha: 0.5),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () {
+                        dialogTimer?.cancel();
+                        Navigator.of(ctx).pop(true);
+                      },
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.check_rounded, size: 20, color: Colors.white),
+                          SizedBox(width: 6),
+                          Text(
+                            'YES',
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    dialogTimer.cancel();
+    return confirmed == true;
   }
 
   Future<void> _showCelebrationDialog({
