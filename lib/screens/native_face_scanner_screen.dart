@@ -11,7 +11,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import '../services/attendance_service.dart';
-import '../utils/camera_face_frame.dart';
 import '../utils/ist_helper.dart';
 
 /// QR Badge Attendance Terminal - the mobile counterpart of the web portal's
@@ -63,6 +62,21 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
 
   bool get _isActive => mounted && !_isDisposed;
   bool get _canProcessFrames => _isActive && !_isRecordingAttendance && _accessDeniedMessage == null && !_isProcessingQr;
+
+  static const Map<DeviceOrientation, int> _orientations = {
+    DeviceOrientation.portraitUp: 0,
+    DeviceOrientation.landscapeLeft: 90,
+    DeviceOrientation.portraitDown: 180,
+    DeviceOrientation.landscapeRight: 270,
+  };
+
+  CameraDescription? get _currentCamera =>
+      (_cameras.isNotEmpty && _selectedCameraIndex < _cameras.length)
+          ? _cameras[_selectedCameraIndex]
+          : null;
+
+  bool get _isBackCamera =>
+      _currentCamera?.lensDirection == CameraLensDirection.back;
 
   @override
   void initState() {
@@ -132,11 +146,18 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
       _cameras = await availableCameras();
       if (_cameras.isEmpty) return;
 
+      // Prefer BACK camera for handheld QR scanning; fallback to front or 0
+      final backCameraIndex = _cameras.indexWhere(
+        (cam) => cam.lensDirection == CameraLensDirection.back,
+      );
       final frontCameraIndex = _cameras.indexWhere(
         (cam) => cam.lensDirection == CameraLensDirection.front,
       );
 
-      _selectedCameraIndex = frontCameraIndex != -1 ? frontCameraIndex : 0;
+      _selectedCameraIndex = backCameraIndex != -1
+          ? backCameraIndex
+          : (frontCameraIndex != -1 ? frontCameraIndex : 0);
+
       await _initCamera(_selectedCameraIndex);
     } catch (_) {}
   }
@@ -144,15 +165,27 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
   Future<void> _initCamera(int cameraIndex) async {
     if (_cameras.isEmpty || _isDisposed) return;
 
-    final controller = CameraController(
+    CameraController controller = CameraController(
       _cameras[cameraIndex],
-      ResolutionPreset.medium,
+      ResolutionPreset.high,
       enableAudio: false,
       imageFormatGroup: Platform.isIOS ? ImageFormatGroup.bgra8888 : ImageFormatGroup.nv21,
     );
 
     try {
-      await controller.initialize();
+      try {
+        await controller.initialize();
+      } catch (_) {
+        // Fallback to medium resolution preset if high is not supported on device
+        controller = CameraController(
+          _cameras[cameraIndex],
+          ResolutionPreset.medium,
+          enableAudio: false,
+          imageFormatGroup: Platform.isIOS ? ImageFormatGroup.bgra8888 : ImageFormatGroup.nv21,
+        );
+        await controller.initialize();
+      }
+
       if (!_isActive) {
         await controller.dispose();
         return;
@@ -160,6 +193,12 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
       _cameraController = controller;
       _selectedCameraIndex = cameraIndex;
       _isFlashOn = false;
+
+      // Attempt continuous auto-focus for sharp QR detection
+      try {
+        await controller.setFocusMode(FocusMode.auto);
+      } catch (_) {}
+
       await controller.startImageStream(_onCameraImage);
       if (!_isActive) return;
       setState(() {
@@ -220,6 +259,19 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     } catch (_) {}
   }
 
+  Future<void> _onTapFocus(TapDownDetails details, BoxConstraints constraints) async {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
+    try {
+      final point = Offset(
+        (details.localPosition.dx / constraints.maxWidth).clamp(0.0, 1.0),
+        (details.localPosition.dy / constraints.maxHeight).clamp(0.0, 1.0),
+      );
+      await controller.setFocusPoint(point);
+      await controller.setFocusMode(FocusMode.auto);
+    } catch (_) {}
+  }
+
   // ----------------------------------------------------------- frame loop
 
   void _onCameraImage(CameraImage image) {
@@ -231,31 +283,194 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     _processFrame(image).whenComplete(() => _processingFrame = false);
   }
 
+  InputImage? _inputImageFromCameraImage(CameraImage image) {
+    final controller = _cameraController;
+    if (controller == null || _cameras.isEmpty || _selectedCameraIndex >= _cameras.length) {
+      return null;
+    }
+    final camera = _cameras[_selectedCameraIndex];
+
+    // 1. Calculate rotation compensation
+    InputImageRotation? rotation;
+    if (Platform.isIOS) {
+      rotation = InputImageRotationValue.fromRawValue(camera.sensorOrientation);
+    } else if (Platform.isAndroid) {
+      var rotationCompensation = _orientations[controller.value.deviceOrientation];
+      if (rotationCompensation == null) return null;
+      if (camera.lensDirection == CameraLensDirection.front) {
+        rotationCompensation = (camera.sensorOrientation + rotationCompensation) % 360;
+      } else {
+        rotationCompensation = (camera.sensorOrientation - rotationCompensation + 360) % 360;
+      }
+      rotation = InputImageRotationValue.fromRawValue(rotationCompensation);
+    }
+    if (rotation == null) return null;
+
+    final Size imageSize = Size(image.width.toDouble(), image.height.toDouble());
+
+    // 2. iOS format: BGRA8888
+    if (Platform.isIOS) {
+      if (image.planes.isEmpty) return null;
+      final plane = image.planes.first;
+      return InputImage.fromBytes(
+        bytes: plane.bytes,
+        metadata: InputImageMetadata(
+          size: imageSize,
+          rotation: rotation,
+          format: InputImageFormat.bgra8888,
+          bytesPerRow: plane.bytesPerRow,
+        ),
+      );
+    }
+
+    // 3. Android format: NV21 or YUV_420_888
+    if (Platform.isAndroid) {
+      final int numPixels = image.width * image.height;
+      final int expectedNv21Length = numPixels + (numPixels ~/ 2);
+
+      // Case A: Stream already single-plane with complete NV21 buffer
+      if (image.planes.length == 1 && image.planes.first.bytes.length >= expectedNv21Length) {
+        final plane = image.planes.first;
+        return InputImage.fromBytes(
+          bytes: plane.bytes,
+          metadata: InputImageMetadata(
+            size: imageSize,
+            rotation: rotation,
+            format: InputImageFormat.nv21,
+            bytesPerRow: plane.bytesPerRow,
+          ),
+        );
+      }
+
+      // Case B: Multi-plane YUV_420_888 (standard Android stream) -> Convert to NV21
+      if (image.planes.length >= 3) {
+        final nv21Bytes = _convertYuv420ToNv21(image);
+        return InputImage.fromBytes(
+          bytes: nv21Bytes,
+          metadata: InputImageMetadata(
+            size: imageSize,
+            rotation: rotation,
+            format: InputImageFormat.nv21,
+            bytesPerRow: image.width,
+          ),
+        );
+      }
+
+      // Case C: Single plane fallback
+      if (image.planes.isNotEmpty) {
+        final plane = image.planes.first;
+        return InputImage.fromBytes(
+          bytes: plane.bytes,
+          metadata: InputImageMetadata(
+            size: imageSize,
+            rotation: rotation,
+            format: InputImageFormat.nv21,
+            bytesPerRow: plane.bytesPerRow,
+          ),
+        );
+      }
+    }
+
+    return null;
+  }
+
+  Uint8List _convertYuv420ToNv21(CameraImage image) {
+    final int width = image.width;
+    final int height = image.height;
+    final Plane yPlane = image.planes[0];
+    final Plane uPlane = image.planes[1];
+    final Plane vPlane = image.planes[2];
+
+    final Uint8List yBuffer = yPlane.bytes;
+    final Uint8List uBuffer = uPlane.bytes;
+    final Uint8List vBuffer = vPlane.bytes;
+
+    final int numPixels = width * height;
+    final Uint8List nv21 = Uint8List(numPixels + (numPixels ~/ 2));
+
+    // Copy Y channel
+    if (yPlane.bytesPerRow == width) {
+      nv21.setRange(0, numPixels, yBuffer);
+    } else {
+      int dstOffset = 0;
+      for (int row = 0; row < height; row++) {
+        final int srcOffset = row * yPlane.bytesPerRow;
+        nv21.setRange(dstOffset, dstOffset + width, yBuffer, srcOffset);
+        dstOffset += width;
+      }
+    }
+
+    // Interleave V and U channels (NV21 format: Y... followed by V0 U0 V1 U1...)
+    int uvDstIndex = numPixels;
+    final int uRowStride = uPlane.bytesPerRow;
+    final int vRowStride = vPlane.bytesPerRow;
+    final int uPixelStride = uPlane.bytesPerPixel ?? 1;
+    final int vPixelStride = vPlane.bytesPerPixel ?? 1;
+
+    final int chromaHeight = height ~/ 2;
+    final int chromaWidth = width ~/ 2;
+
+    for (int row = 0; row < chromaHeight; row++) {
+      final int uRowStart = row * uRowStride;
+      final int vRowStart = row * vRowStride;
+      for (int col = 0; col < chromaWidth; col++) {
+        final int vIndex = vRowStart + (col * vPixelStride);
+        final int uIndex = uRowStart + (col * uPixelStride);
+
+        if (vIndex < vBuffer.length && uIndex < uBuffer.length && uvDstIndex + 1 < nv21.length) {
+          nv21[uvDstIndex++] = vBuffer[vIndex];
+          nv21[uvDstIndex++] = uBuffer[uIndex];
+        }
+      }
+    }
+
+    return nv21;
+  }
+
   Future<void> _processFrame(CameraImage cameraImage) async {
     final controller = _cameraController;
     if (controller == null || _isProcessingQr || _isRecordingAttendance) return;
 
     try {
-      final frame = CameraFaceFrame.fromCameraImage(
-        cameraImage,
-        controller.description,
-        controller.value.deviceOrientation,
-      );
-      if (frame == null) return;
+      final inputImage = _inputImageFromCameraImage(cameraImage);
+      if (inputImage == null) return;
 
-      final barcodes = await _barcodeScanner.processImage(frame.inputImage);
+      final barcodes = await _barcodeScanner.processImage(inputImage);
       if (!_canProcessFrames || _isProcessingQr) return;
 
       for (final barcode in barcodes) {
-        final raw = barcode.rawValue;
-        if (raw != null && raw.startsWith('WPQR.')) {
-          await _handleQrAttendance(raw);
-          break;
+        final raw = (barcode.rawValue ?? barcode.displayValue ?? '').trim();
+        if (raw.isNotEmpty) {
+          if (raw.startsWith('WPQR.')) {
+            await _handleQrAttendance(raw);
+            break;
+          } else {
+            _showInvalidQrWarning(raw);
+            break;
+          }
         }
       }
     } catch (e) {
       debugPrint('QR barcode frame processing error: $e');
     }
+  }
+
+  void _showInvalidQrWarning(String raw) {
+    if (_accessDeniedMessage != null || _isRecordingAttendance) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _accessDeniedMessage = 'Invalid QR Code. Please show WorkPulse Dynamic Badge';
+      _statusMessage = 'Unrecognized QR code';
+    });
+    _accessDeniedTimer?.cancel();
+    _accessDeniedTimer = Timer(const Duration(seconds: 3), () {
+      if (_isActive) {
+        setState(() {
+          _accessDeniedMessage = null;
+          _statusMessage = 'Hold Smart Badge in front of camera';
+        });
+      }
+    });
   }
 
   // ----------------------------------------------------------- attendance
@@ -716,16 +931,31 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
                 onTap: _toggleCamera,
                 borderRadius: BorderRadius.circular(30),
                 child: Container(
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
                     color: const Color(0xFF0F172A).withValues(alpha: 0.85),
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: const Color(0xFF334155)),
                   ),
-                  child: const Icon(
-                    Icons.flip_camera_ios_rounded,
-                    color: Color(0xFF38BDF8),
-                    size: 18,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.flip_camera_ios_rounded,
+                        color: Color(0xFF38BDF8),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        _isBackCamera ? 'Back' : 'Front',
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF38BDF8),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -741,18 +971,26 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
     }
 
     return Positioned.fill(
-      child: ClipRect(
-        child: OverflowBox(
-          alignment: Alignment.center,
-          child: FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: _cameraController!.value.previewSize?.height ?? 1,
-              height: _cameraController!.value.previewSize?.width ?? 1,
-              child: CameraPreview(_cameraController!),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (details) => _onTapFocus(details, constraints),
+            child: ClipRect(
+              child: OverflowBox(
+                alignment: Alignment.center,
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: _cameraController!.value.previewSize?.height ?? 1,
+                    height: _cameraController!.value.previewSize?.width ?? 1,
+                    child: CameraPreview(_cameraController!),
+                  ),
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -979,21 +1217,43 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
               child: const Icon(Icons.qr_code_2_rounded, color: Color(0xFF818CF8), size: 22),
             ),
             const SizedBox(width: 12),
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Smart Badge Terminal',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
+                  Row(
+                    children: [
+                      const Text(
+                        'Smart Badge Terminal',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF38BDF8).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.3)),
+                        ),
+                        child: Text(
+                          _isBackCamera ? 'BACK CAM' : 'FRONT CAM',
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF38BDF8),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  Text(
-                    'Present your phone badge 15-20 cm from camera',
+                  const Text(
+                    'Point camera at employee phone badge (15-25 cm)',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       fontSize: 12,
@@ -1013,20 +1273,13 @@ class _NativeFaceScannerScreenState extends State<NativeFaceScannerScreen>
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: const Color(0xFF334155)),
           ),
-          child: Row(
+          child: const Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.shield_rounded, color: Color(0xFF10B981), size: 16),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
+              Icon(Icons.touch_app_rounded, color: Color(0xFF38BDF8), size: 16),
+              SizedBox(width: 8),
+              Expanded(
                 child: Text(
-                  'Dynamic single-use security badge. Auto-verifies and returns in 4 seconds.',
+                  'Tap screen to focus if needed. Dynamic badge auto-verifies instantly.',
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 11,
