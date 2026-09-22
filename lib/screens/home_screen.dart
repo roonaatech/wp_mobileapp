@@ -105,8 +105,8 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _buildNavItem(
-                icon: Icons.face_rounded, 
-                label: 'Attendance', 
+                icon: Icons.qr_code_scanner_rounded, 
+                label: 'QR Terminal', 
                 index: 0,
               ),
             ],

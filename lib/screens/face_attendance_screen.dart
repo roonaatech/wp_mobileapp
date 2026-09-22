@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../services/auth_service.dart';
-import '../config/app_config.dart';
 import '../utils/ist_helper.dart';
 import 'native_face_scanner_screen.dart';
 
@@ -125,14 +123,14 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> with Widget
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(
-                Icons.center_focus_strong_rounded,
+                Icons.qr_code_scanner_rounded,
                 color: Color(0xFF10B981),
                 size: 18,
               ),
             ),
             const SizedBox(width: 10),
             const Text(
-              'Attendance Terminal',
+              'QR Attendance Terminal',
               style: TextStyle(
                 fontFamily: 'Poppins',
                 fontSize: 17,
@@ -311,7 +309,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> with Widget
               ],
             ),
             child: const Icon(
-              Icons.face_retouching_natural_rounded,
+              Icons.qr_code_scanner_rounded,
               color: Colors.white,
               size: 42,
             ),
@@ -319,7 +317,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> with Widget
           const SizedBox(height: 16),
 
           const Text(
-            'Staff Attendance Scanner',
+            'Staff QR Attendance',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: 'Poppins',
@@ -332,7 +330,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> with Widget
           const SizedBox(height: 6),
 
           const Text(
-            'Common attendance terminal for all employees.\nLook into the camera to record Check-In & Check-Out.',
+            'Common attendance terminal for all employees.\nHold employee Smart Badge in front of camera to record Check-In & Check-Out.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: 'Poppins',
@@ -343,7 +341,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> with Widget
           ),
           const SizedBox(height: 22),
 
-          // Start Face Scanner Button (Opens in-app scanner)
+          // Start QR Scanner Button
           SizedBox(
             width: double.infinity,
             height: 52,
@@ -361,10 +359,10 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> with Widget
               child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.camera_alt_rounded, size: 22),
+                  Icon(Icons.qr_code_scanner_rounded, size: 22),
                   SizedBox(width: 10),
                   Text(
-                    'Start Face Scanner',
+                    'Launch QR Scanner',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       fontSize: 16,
@@ -386,19 +384,19 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> with Widget
       children: [
         Expanded(
           child: _buildFeatureCard(
-            icon: Icons.people_alt_rounded,
+            icon: Icons.qr_code_2_rounded,
             iconColor: const Color(0xFF38BDF8),
-            title: 'All Employees',
-            subtitle: 'Auto-identifies any registered staff',
+            title: 'Dynamic QR Badge',
+            subtitle: 'Single-use secure badge on phones',
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: _buildFeatureCard(
-            icon: Icons.verified_user_rounded,
+            icon: Icons.bolt_rounded,
             iconColor: const Color(0xFF10B981),
-            title: '3D Liveness',
-            subtitle: 'Head turn anti-spoofing check',
+            title: 'Instant Scan',
+            subtitle: 'Sub-second Check-In & Out',
           ),
         ),
       ],
@@ -470,7 +468,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> with Widget
               Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFF38BDF8)),
               SizedBox(width: 8),
               Text(
-                'How Staff Attendance Works',
+                'How to Mark Attendance with QR',
                 style: TextStyle(
                   fontFamily: 'Poppins',
                   fontSize: 14,
@@ -483,26 +481,26 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> with Widget
           const SizedBox(height: 14),
           _buildStepRow(
             step: '1',
-            title: 'Stand in Front of Camera',
-            description: 'Align your face within the on-screen circle guide.',
+            title: 'Open WorkPulse App',
+            description: 'Open the WorkPulse mobile app on your smartphone.',
           ),
           const SizedBox(height: 10),
           _buildStepRow(
             step: '2',
-            title: 'Automatic Face Match',
-            description: 'The scanner automatically matches your registered Face ID.',
+            title: 'Open Badge Tab',
+            description: 'Tap the "Badge" tab at the bottom to view your active dynamic QR badge.',
           ),
           const SizedBox(height: 10),
           _buildStepRow(
             step: '3',
-            title: 'Follow Liveness Prompts',
-            description: 'Turn your head left and right as prompted to verify 3D presence.',
+            title: 'Hold Up to Terminal Camera',
+            description: 'Present your QR code 15-20 cm facing this terminal camera.',
           ),
           const SizedBox(height: 10),
           _buildStepRow(
             step: '4',
             title: 'Instant Confirmation',
-            description: 'Your check-in / check-out is saved and the terminal returns to this screen in 4 seconds.',
+            description: 'A chime sound and green celebration screen confirm your record.',
           ),
         ],
       ),

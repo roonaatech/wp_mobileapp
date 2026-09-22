@@ -109,8 +109,21 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  late Future<bool> _autoLoginFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoLoginFuture = Provider.of<AuthService>(context, listen: false).tryAutoLogin();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -121,9 +134,24 @@ class AuthWrapper extends StatelessWidget {
             return const ChangePasswordScreen(isMandatory: true);
           }
           return const HomeScreen();
-        } else {
-          return const LoginScreen();
         }
+
+        return FutureBuilder<bool>(
+          future: _autoLoginFuture,
+          builder: (ctx, authResultSnapshot) {
+            if (authResultSnapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                backgroundColor: Colors.white,
+                body: Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF3B82F6),
+                  ),
+                ),
+              );
+            }
+            return const LoginScreen();
+          },
+        );
       },
     );
   }
