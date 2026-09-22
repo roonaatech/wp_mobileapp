@@ -193,12 +193,16 @@ class AuthService with ChangeNotifier {
     try {
       final response = await client.post(
         Uri.parse(url),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Client-Type': 'mobile-app',
+        },
         body: json.encode({
           'email': email,
           'password': password,
           'forceLocal': forceLocal,
           'is_mobile_app': true,
+          'client_type': 'mobile_app',
           if (appVersion != null) 'app_version': appVersion,
         }),
       );
