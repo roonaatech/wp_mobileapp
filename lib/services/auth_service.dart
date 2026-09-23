@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../config/app_config.dart';
 import 'activity_logger.dart';
 import '../utils/ist_helper.dart';
+import '../utils/device_helper.dart';
 
 /// Creates an HTTP client that can handle self-signed SSL certificates
 http.Client _createHttpClient() {
@@ -40,6 +41,13 @@ class AuthDeclarationRequiredException implements Exception {
 class AuthPasswordSetupRequiredException implements Exception {
   final String message;
   AuthPasswordSetupRequiredException(this.message);
+  @override
+  String toString() => message;
+}
+
+class AuthDeviceViolationException implements Exception {
+  final String message;
+  AuthDeviceViolationException(this.message);
   @override
   String toString() => message;
 }
@@ -233,13 +241,21 @@ class AuthService with ChangeNotifier {
       }
     }
     
-    print('Attempting login to: $url (Force Local: $forceLocal, App Version: ${appVersion ?? "skipped (dev mode)"}, Release: $isReleaseMode)');    final client = _createHttpClient();
+    print('Attempting login to: $url (Force Local: $forceLocal, App Version: ${appVersion ?? "skipped (dev mode)"}, Release: $isReleaseMode)');
+    final client = _createHttpClient();
     try {
+      final deviceId = await DeviceHelper.getDeviceId();
+      final deviceName = await DeviceHelper.getDeviceName();
+
       final response = await client.post(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
           'X-Client-Type': 'mobile-app',
+          'x-is-mobile': 'true',
+          'x-is-mobile-app': 'true',
+          'x-device-id': deviceId,
+          'x-device-name': deviceName,
         },
         body: json.encode({
           'email': email,
@@ -247,6 +263,8 @@ class AuthService with ChangeNotifier {
           'forceLocal': forceLocal,
           'is_mobile_app': true,
           'client_type': 'mobile_app',
+          'deviceId': deviceId,
+          'deviceName': deviceName,
           if (appVersion != null) 'app_version': appVersion,
         }),
       );
@@ -270,6 +288,9 @@ class AuthService with ChangeNotifier {
       }
 
       if (response.statusCode != 200) {
+        if (responseData != null && responseData is Map && responseData['deviceViolation'] == true) {
+          throw AuthDeviceViolationException(responseData['message']?.toString() ?? 'Security Violation: Device Conflict');
+        }
         if (responseData != null && responseData is Map && responseData['code'] == 'DECLARATION_REQUIRED') {
           throw AuthDeclarationRequiredException(responseData['message'] ?? 'Declaration required');
         }
