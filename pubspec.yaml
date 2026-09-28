@@ -1,7 +1,7 @@
 name: attendance_app
 description: WorkPulse - Employee attendance, leave, and on-duty management.
 publish_to: 'none'
-version: 1.4.0+5
+version: 1.4.0+13
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
