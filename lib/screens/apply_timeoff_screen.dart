@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/attendance_service.dart';
+import '../services/auth_service.dart';
 import '../utils/dialogs.dart';
 import '../utils/ist_helper.dart';
 
@@ -23,9 +24,13 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
   TimeOfDay? _endTime;
   bool _isLoading = false;
 
+  TimeOfDay _officeStartTime = const TimeOfDay(hour: 9, minute: 30);
+  TimeOfDay _officeEndTime = const TimeOfDay(hour: 18, minute: 30);
+
   @override
   void initState() {
     super.initState();
+    _loadOfficeHours();
     if (widget.existingRequest != null) {
       _initializeForEdit();
     } else {
@@ -37,10 +42,41 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     }
   }
 
+  Future<void> _loadOfficeHours() async {
+    try {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final settings = await AuthService.fetchGlobalSettings(token: authService.token);
+      String? startStr;
+      String? endStr;
+      if (settings != null) {
+        startStr = settings['office_start_time'];
+        endStr = settings['office_end_time'];
+        final prefs = await SharedPreferences.getInstance();
+        if (startStr != null) await prefs.setString('office_start_time', startStr);
+        if (endStr != null) await prefs.setString('office_end_time', endStr);
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        startStr = prefs.getString('office_start_time');
+        endStr = prefs.getString('office_end_time');
+      }
+
+      if (startStr != null && startStr.contains(':')) {
+        final parts = startStr.split(':');
+        _officeStartTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+      }
+      if (endStr != null && endStr.contains(':')) {
+        final parts = endStr.split(':');
+        _officeEndTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      print('Error loading office hours: $e');
+    }
+  }
+
   void _initializeForEdit() {
     final req = widget.existingRequest!;
     _reasonController.text = req['subtitle'] ?? ''; // Assuming subtitle holds reason for now or fetch detail
-    // TODO: Verify where reason comes from in list item. Usually it's in 'reason' or 'subtitle'
     if (req['reason'] != null) _reasonController.text = req['reason'];
 
     try {
@@ -74,7 +110,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: initialDate,
-      firstDate: now, // Can't apply for past dates usually? Or maybe allow it?
+      firstDate: now,
       lastDate: now.add(const Duration(days: 90)),
       selectableDayPredicate: (DateTime day) {
         // Disable Sundays
@@ -93,6 +129,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
         );
       },
     );
+    if (!mounted) return;
     if (picked != null && picked != _selectedDate) {
       if (picked.weekday == DateTime.sunday) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -106,12 +143,37 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     }
   }
 
+  String _formatTimeOfDay(TimeOfDay time) {
+    final now = DateTime.now();
+    final dt = DateTime(now.year, now.month, now.day, time.hour, time.minute);
+    return ISTHelper.formatTime(dt);
+  }
+
+  bool get _isOutsideOfficeHours {
+    final officeStartMinutes = _officeStartTime.hour * 60 + _officeStartTime.minute;
+    final officeEndMinutes = _officeEndTime.hour * 60 + _officeEndTime.minute;
+
+    if (_startTime != null) {
+      final startMinutes = _startTime!.hour * 60 + _startTime!.minute;
+      if (startMinutes < officeStartMinutes || startMinutes >= officeEndMinutes) {
+        return true;
+      }
+    }
+    if (_endTime != null) {
+      final endMinutes = _endTime!.hour * 60 + _endTime!.minute;
+      if (endMinutes <= officeStartMinutes || endMinutes > officeEndMinutes) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   Future<void> _selectTime(bool isStart) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: isStart 
-          ? (_startTime ?? const TimeOfDay(hour: 9, minute: 0))
-          : (_endTime ?? const TimeOfDay(hour: 18, minute: 0)),
+          ? (_startTime ?? _officeStartTime)
+          : (_endTime ?? _officeEndTime),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -126,16 +188,39 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
       },
     );
     
+    if (!mounted) return;
     if (picked != null) {
       setState(() {
+        final officeStartMinutes = _officeStartTime.hour * 60 + _officeStartTime.minute;
+        final officeEndMinutes = _officeEndTime.hour * 60 + _officeEndTime.minute;
+        final pickedMinutes = picked.hour * 60 + picked.minute;
+
         if (isStart) {
           _startTime = picked;
-          // Auto set end time to start + 1 hour if not set or invalid
-          if (_endTime == null || (_endTime!.hour < picked.hour) || (_endTime!.hour == picked.hour && _endTime!.minute <= picked.minute)) {
-             _endTime = TimeOfDay(hour: (picked.hour + 2) % 24, minute: picked.minute);
+          if (pickedMinutes < officeStartMinutes || pickedMinutes >= officeEndMinutes) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Start time must be within office hours (${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)})'),
+                backgroundColor: Colors.red[700],
+              ),
+            );
+          }
+          // Auto set end time to start + 2 hours clamped to officeEnd
+          if (_endTime == null || (_endTime!.hour * 60 + _endTime!.minute <= pickedMinutes)) {
+            final targetMinutes = pickedMinutes + 120;
+            final clampedMinutes = targetMinutes > officeEndMinutes ? officeEndMinutes : targetMinutes;
+            _endTime = TimeOfDay(hour: clampedMinutes ~/ 60, minute: clampedMinutes % 60);
           }
         } else {
           _endTime = picked;
+          if (pickedMinutes <= officeStartMinutes || pickedMinutes > officeEndMinutes) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('End time must be within office hours (${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)})'),
+                backgroundColor: Colors.red[700],
+              ),
+            );
+          }
         }
       });
     }
@@ -143,9 +228,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
 
   String _formatTime(TimeOfDay? time) {
     if (time == null) return 'Select Time';
-    final now = DateTime.now();
-    final dt = DateTime(now.year, now.month, now.day, time.hour, time.minute);
-    return ISTHelper.formatTime(dt);
+    return _formatTimeOfDay(time);
   }
 
   String _calculateDuration() {
@@ -179,8 +262,27 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     // Validate times
     final startMinutes = _startTime!.hour * 60 + _startTime!.minute;
     final endMinutes = _endTime!.hour * 60 + _endTime!.minute;
+    final officeStartMinutes = _officeStartTime.hour * 60 + _officeStartTime.minute;
+    final officeEndMinutes = _officeEndTime.hour * 60 + _officeEndTime.minute;
+
     if (endMinutes <= startMinutes) {
       showErrorDialog(context, 'End time must be after start time');
+      return;
+    }
+
+    if (startMinutes < officeStartMinutes || startMinutes >= officeEndMinutes) {
+      showErrorDialog(
+        context,
+        'Start time (${_formatTime(_startTime)}) must be within configured office hours (${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)}). Requests outside office hours are not allowed.',
+      );
+      return;
+    }
+
+    if (endMinutes <= officeStartMinutes || endMinutes > officeEndMinutes) {
+      showErrorDialog(
+        context,
+        'End time (${_formatTime(_endTime)}) must be within configured office hours (${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)}). Requests outside office hours are not allowed.',
+      );
       return;
     }
 
@@ -247,6 +349,31 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Office Hours info banner
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFBBF7D0)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.schedule, size: 16, color: Color(0xFF16A34A)),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Office Hours: ${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF15803D),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
               // Date Selection
               InkWell(
                 onTap: _selectDate,
@@ -275,10 +402,19 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
                     child: InkWell(
                       onTap: () => _selectTime(true),
                       child: InputDecorator(
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Start Time',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.access_time),
+                          border: const OutlineInputBorder(),
+                          prefixIcon: const Icon(Icons.access_time),
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: _startTime != null &&
+                                      (_startTime!.hour * 60 + _startTime!.minute < _officeStartTime.hour * 60 + _officeStartTime.minute ||
+                                          _startTime!.hour * 60 + _startTime!.minute >= _officeEndTime.hour * 60 + _officeEndTime.minute)
+                                  ? Colors.red
+                                  : Colors.grey[400]!,
+                            ),
+                          ),
                         ),
                         child: Text(
                           _formatTime(_startTime),
@@ -294,10 +430,19 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
                     child: InkWell(
                       onTap: () => _selectTime(false),
                       child: InputDecorator(
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'End Time',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.access_time_filled),
+                          border: const OutlineInputBorder(),
+                          prefixIcon: const Icon(Icons.access_time_filled),
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: _endTime != null &&
+                                      (_endTime!.hour * 60 + _endTime!.minute <= _officeStartTime.hour * 60 + _officeStartTime.minute ||
+                                          _endTime!.hour * 60 + _endTime!.minute > _officeEndTime.hour * 60 + _officeEndTime.minute)
+                                  ? Colors.red
+                                  : Colors.grey[400]!,
+                            ),
+                          ),
                         ),
                         child: Text(
                           _formatTime(_endTime),
@@ -311,7 +456,32 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
                 ],
               ),
               
-              if (_startTime != null && _endTime != null)
+              if (_isOutsideOfficeHours)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.red[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red[200]!),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline, size: 16, color: Colors.red[700]),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Time-off must be within office hours (${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)}). Any time beyond is not allowed.',
+                            style: TextStyle(fontSize: 11, color: Colors.red[700], fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              if (_startTime != null && _endTime != null && !_isOutsideOfficeHours)
                 Padding(
                   padding: const EdgeInsets.only(top: 8.0, left: 4),
                   child: Text(
@@ -342,7 +512,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
               const SizedBox(height: 24),
 
               ElevatedButton(
-                onPressed: _isLoading ? null : _submit,
+                onPressed: (_isLoading || _isOutsideOfficeHours) ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
@@ -363,3 +533,4 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     );
   }
 }
+
