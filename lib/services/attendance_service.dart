@@ -636,6 +636,54 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
+  /// Fetch current user's today attendance status (including checkedIn, hasCheckIn, hasCheckOut)
+  Future<Map<String, dynamic>> getMyTodayAttendance() async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final url = AppConfig.todayAttendance;
+    try {
+      final response = await _client.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+      );
+      if (response.statusCode != 200) {
+        throw Exception('Failed to fetch today attendance: ${response.statusCode}');
+      }
+      return json.decode(response.body);
+    } catch (error) {
+      rethrow;
+    }
+  }
+
+  /// Fetch all dates on which current user has recorded check-ins
+  Future<List<String>> getMyAttendedDates() async {
+    if (token == null) {
+      return [];
+    }
+    final url = AppConfig.myAttendedDates;
+    try {
+      final response = await _client.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+      );
+      if (response.statusCode != 200) {
+        return [];
+      }
+      final data = json.decode(response.body);
+      final List<dynamic> dates = data['attendedDates'] ?? [];
+      return dates.map((e) => e.toString()).toList();
+    } catch (error) {
+      return [];
+    }
+  }
+
   /// Fetch face registration status for the currently authenticated user
   Future<Map<String, dynamic>> getFaceStatus() async {
     if (token == null) {

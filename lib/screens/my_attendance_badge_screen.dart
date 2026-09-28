@@ -162,6 +162,8 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
         return const Color(0xFF10B981);
       case 'COMPLETED':
         return const Color(0xFF8B5CF6);
+      case 'ON_LEAVE':
+        return const Color(0xFFEF4444);
       case 'NOT_CHECKED_IN':
       default:
         return const Color(0xFFF59E0B);
@@ -178,6 +180,8 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
         return checkOutTime != null
             ? 'Completed (Out: $checkOutTime)'
             : 'Attendance Complete';
+      case 'ON_LEAVE':
+        return 'On Approved Leave Today';
       case 'NOT_CHECKED_IN':
       default:
         return 'Not Checked In Today';
@@ -583,12 +587,14 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(
+                                   Icon(
                                     todayStatus == 'CHECKED_IN'
                                         ? Icons.login_rounded
                                         : todayStatus == 'COMPLETED'
                                             ? Icons.check_circle_rounded
-                                            : Icons.access_time_rounded,
+                                            : todayStatus == 'ON_LEAVE'
+                                                ? Icons.event_busy_rounded
+                                                : Icons.access_time_rounded,
                                     color: statusColor,
                                     size: 18,
                                   ),
@@ -607,6 +613,19 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                                 ],
                               ),
                             ),
+                            if (todayStatus == 'ON_LEAVE')
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Text(
+                                  'You are on approved leave today. Attendance check-in is not permitted.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.red.shade300,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),

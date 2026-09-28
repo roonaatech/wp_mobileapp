@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../services/attendance_service.dart';
@@ -33,8 +32,10 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   Map<String, dynamic> _userLeaveBalance = {};
   int? _selectedLeaveBalance = 0;
   Map<DateTime, String> _existingLeavesStatus = {};
+  Set<DateTime> _attendedDates = {};
   bool _hasLoadedData = false;
   bool _isHalfDay = false;
+  String? _todayAttendanceStatus;
 
   // Calculate leave days excluding Sundays and any dates in excludeStatusMap (Approved/Pending)
   int _calculateLeaveDays(DateTime startDate, DateTime endDate, {Map<DateTime, String>? excludeStatusMap}) {
@@ -87,14 +88,89 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
 
   // Method to load all data from database
   Future<void> _loadAllData() async {
-    print('[ApplyLeave] Fetching leave types, balance, and existing leaves...');
+    print('[ApplyLeave] Fetching leave types, balance, existing leaves, and attended dates...');
     await Future.wait([
       _fetchLeaveTypes(),
       _fetchUserLeaveBalance(),
       _fetchMyLeaves(),
       _fetchLeavePastDaysAllowed(),
+      _fetchTodayAttendanceStatus(),
+      _fetchAttendedDates(),
     ]);
     print('[ApplyLeave] Data loaded. Leave types count: ${_leaveTypes.length}');
+  }
+
+  bool _hasTodayCheckIn = false;
+
+  Future<void> _fetchTodayAttendanceStatus() async {
+    try {
+      final service = Provider.of<AttendanceService>(context, listen: false);
+      final todayData = await service.getMyTodayAttendance();
+      if (mounted) {
+        setState(() {
+          _todayAttendanceStatus = todayData['status'];
+          _hasTodayCheckIn = todayData['hasCheckIn'] == true;
+        });
+      }
+    } catch (e) {
+      print('[ApplyLeave] Error fetching today attendance status: $e');
+      try {
+        final authService = Provider.of<AuthService>(context, listen: false);
+        final email = authService.userEmail;
+        if (email != null && email.isNotEmpty) {
+          final service = Provider.of<AttendanceService>(context, listen: false);
+          final statusRes = await service.getTodayAttendanceStatus(email);
+          if (mounted) {
+            setState(() {
+              _todayAttendanceStatus = statusRes['status'];
+              _hasTodayCheckIn = statusRes['status'] == 'CHECKED_IN' || statusRes['status'] == 'CHECKED_OUT' || statusRes['status'] == 'COMPLETED';
+            });
+          }
+        }
+      } catch (e2) {
+        print('[ApplyLeave] Error in fallback today attendance: $e2');
+      }
+    }
+  }
+
+  Future<void> _fetchAttendedDates() async {
+    try {
+      final service = Provider.of<AttendanceService>(context, listen: false);
+      final dateStrings = await service.getMyAttendedDates();
+      final Set<DateTime> dates = {};
+      for (var dStr in dateStrings) {
+        try {
+          final p = dStr.split('-');
+          if (p.length == 3) {
+            dates.add(DateTime(int.parse(p[0]), int.parse(p[1]), int.parse(p[2])));
+          }
+        } catch (_) {}
+      }
+      if (mounted) {
+        setState(() {
+          _attendedDates = dates;
+        });
+      }
+    } catch (e) {
+      print('[ApplyLeave] Error fetching attended dates: $e');
+    }
+  }
+
+  bool get _hasCheckedInToday {
+    return _hasTodayCheckIn || _todayAttendanceStatus == 'CHECKED_IN' || _todayAttendanceStatus == 'COMPLETED' || _todayAttendanceStatus == 'CHECKED_OUT';
+  }
+
+  DateTime? _findAttendedDateInRange(DateTime start, DateTime end) {
+    final now = ISTHelper.now();
+    final todayOnly = DateTime(now.year, now.month, now.day);
+    DateTime cur = DateTime(start.year, start.month, start.day);
+    final last = DateTime(end.year, end.month, end.day);
+    while (!cur.isAfter(last)) {
+      if (_attendedDates.contains(cur)) return cur;
+      if (_hasCheckedInToday && cur.isAtSameMomentAs(todayOnly)) return cur;
+      cur = cur.add(const Duration(days: 1));
+    }
+    return null;
   }
 
   Future<void> _fetchLeavePastDaysAllowed() async {
@@ -411,6 +487,34 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                                     ),
                                   ),
                                 ),
+                              if (_startDate != null && _endDate != null && _findAttendedDateInRange(_startDate!, _endDate!) != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 8.0),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFEEBEE),
+                                      border: Border.all(color: const Color(0xFFC1272D)),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.error_outline, color: Color(0xFFC1272D), size: 16),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            'Attendance check-in has already been recorded on ${ISTHelper.formatDate(_findAttendedDateInRange(_startDate!, _endDate!)!)}. Leave cannot be applied for days on which attendance has been recorded.',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: Color(0xFFC1272D),
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -447,7 +551,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: (_isLoading || _isExceedingLimit()) ? null : _submitLeave,
+                onPressed: (_isLoading || _isExceedingLimit() || (_startDate != null && _endDate != null && _findAttendedDateInRange(_startDate!, _endDate!) != null)) ? null : _submitLeave,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
@@ -518,6 +622,13 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                         final dayOnly = DateTime(day.year, day.month, day.day);
                         if (dayOnly.isBefore(minDate)) return false;
                         if (day.weekday == DateTime.sunday) return false;
+                        if (_attendedDates.contains(dayOnly)) {
+                          return false; // Cannot apply leave on days with recorded attendance check-in
+                        }
+                        final todayOnly = DateTime(ISTHelper.now().year, ISTHelper.now().month, ISTHelper.now().day);
+                        if (_hasCheckedInToday && dayOnly.isAtSameMomentAs(todayOnly)) {
+                          return false; // Cannot apply leave on days with recorded attendance check-in
+                        }
                         return true;
                       },
                       headerStyle: const HeaderStyle(
@@ -543,6 +654,25 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                       },
                       calendarBuilders: CalendarBuilders(
                         disabledBuilder: (context, day, focusedDay) {
+                          final todayOnly = DateTime(ISTHelper.now().year, ISTHelper.now().month, ISTHelper.now().day);
+                          final dayOnly = DateTime(day.year, day.month, day.day);
+                          if (_attendedDates.contains(dayOnly) || (_hasCheckedInToday && dayOnly.isAtSameMomentAs(todayOnly))) {
+                            return Container(
+                              margin: const EdgeInsets.all(4),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '${day.day}',
+                                style: TextStyle(
+                                  color: Colors.blue.withOpacity(0.4),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            );
+                          }
                           // Style Sundays distinctly among disabled days
                           if (day.weekday == DateTime.sunday) {
                             return Container(
@@ -670,6 +800,14 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     if (!_formKey.currentState!.validate()) return;
     if (_startDate == null || _endDate == null) {
       showErrorDialog(context, 'Please select dates');
+      return;
+    }
+    final attended = _findAttendedDateInRange(_startDate!, _endDate!);
+    if (attended != null) {
+      showErrorDialog(
+        context,
+        'Attendance check-in has already been recorded on ${ISTHelper.formatDate(attended)}. Leave cannot be applied for days on which attendance has been recorded.',
+      );
       return;
     }
     if (_isExceedingLimit()) {

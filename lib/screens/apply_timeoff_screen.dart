@@ -26,11 +26,13 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
 
   TimeOfDay _officeStartTime = const TimeOfDay(hour: 9, minute: 30);
   TimeOfDay _officeEndTime = const TimeOfDay(hour: 18, minute: 30);
+  String? _todayAttendanceStatus;
 
   @override
   void initState() {
     super.initState();
     _loadOfficeHours();
+    _checkTodayAttendanceStatus();
     if (widget.existingRequest != null) {
       _initializeForEdit();
     } else {
@@ -39,6 +41,39 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
       _startTime = null;
       _endTime = null;
       _reasonController.text = '';
+    }
+  }
+
+  bool _isCurrentlyCheckedIn = false;
+
+  Future<void> _checkTodayAttendanceStatus() async {
+    try {
+      final service = Provider.of<AttendanceService>(context, listen: false);
+      final todayData = await service.getMyTodayAttendance();
+      if (mounted) {
+        setState(() {
+          _todayAttendanceStatus = todayData['status'];
+          _isCurrentlyCheckedIn = todayData['checkedIn'] == true || todayData['status'] == 'CHECKED_IN';
+        });
+      }
+    } catch (e) {
+      print('Error fetching today attendance via getMyTodayAttendance: $e');
+      try {
+        final authService = Provider.of<AuthService>(context, listen: false);
+        final email = authService.userEmail;
+        if (email != null && email.isNotEmpty) {
+          final service = Provider.of<AttendanceService>(context, listen: false);
+          final statusRes = await service.getTodayAttendanceStatus(email);
+          if (mounted) {
+            setState(() {
+              _todayAttendanceStatus = statusRes['status'];
+              _isCurrentlyCheckedIn = statusRes['status'] == 'CHECKED_IN';
+            });
+          }
+        }
+      } catch (e2) {
+        print('Error in fallback today attendance: $e2');
+      }
     }
   }
 
@@ -168,6 +203,18 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     return false;
   }
 
+  bool get _isSelectedDateToday {
+    if (_selectedDate == null) return false;
+    final now = ISTHelper.now();
+    return _selectedDate!.year == now.year &&
+        _selectedDate!.month == now.month &&
+        _selectedDate!.day == now.day;
+  }
+
+  bool get _isCurrentlyCheckedInToday {
+    return _isSelectedDateToday && (_isCurrentlyCheckedIn || _todayAttendanceStatus == 'CHECKED_IN');
+  }
+
   Future<void> _selectTime(bool isStart) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
@@ -252,6 +299,14 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     
     if (_selectedDate == null) {
       showErrorDialog(context, 'Please select a date');
+      return;
+    }
+
+    if (_isCurrentlyCheckedInToday) {
+      showErrorDialog(
+        context,
+        'You are currently checked in today. Time-off can only be applied after checking out for the day.',
+      );
       return;
     }
     if (_startTime == null || _endTime == null) {
@@ -393,6 +448,34 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
                   ),
                 ),
               ),
+              if (_isCurrentlyCheckedInToday)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFF59E0B)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Color(0xFFB45309), size: 18),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'You are currently checked in today. Time-off can only be applied after checking out for the day.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               const SizedBox(height: 16),
 
               // Time Selection Row
@@ -512,7 +595,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
               const SizedBox(height: 24),
 
               ElevatedButton(
-                onPressed: (_isLoading || _isOutsideOfficeHours) ? null : _submit,
+                onPressed: (_isLoading || _isOutsideOfficeHours || _isCurrentlyCheckedInToday) ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
