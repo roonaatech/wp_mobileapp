@@ -84,6 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
     final bool canAccessAttendance = authService.canAccessAttendancePortal;
+    final bool isWfhDay = authService.isWfhToday;
 
     if (canAccessAttendance) {
       return Scaffold(
@@ -119,12 +120,20 @@ class _HomeScreenState extends State<HomeScreen> {
       _currentIndex = 0;
     }
 
-    return Scaffold(
+    return PopScope(
+      canPop: _currentIndex == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_currentIndex != 0) {
+          _goToHomeAndRefresh();
+        }
+      },
+      child: Scaffold(
         body: IndexedStack(
           index: _currentIndex,
           children: [
             LeaveDashboard(key: _dashboardKey),
-            const MyAttendanceBadgeScreen(),
+            MyAttendanceBadgeScreen(onBackToHome: _goToHomeAndRefresh),
             ApplyLeaveScreen(onSuccess: _goToHomeAndRefresh),
             ApplyTimeOffScreen(key: _timeOffKey, onSuccess: _goToHomeAndRefresh),
             OnDutyScreen(onVisitEnded: _goToHomeAndRefresh),
@@ -152,8 +161,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 index: 0,
               ),
               _buildNavItem(
-                icon: Icons.qr_code_2_rounded, 
-                label: 'Badge', 
+                icon: isWfhDay ? Icons.home_work_rounded : Icons.qr_code_2_rounded, 
+                label: isWfhDay ? 'WFH Punch' : 'Badge', 
                 index: 1,
               ),
               _buildNavItem(
@@ -174,7 +183,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
-      );
+      ),
+    );
   }
 
   Widget _buildNavItem({
@@ -1157,7 +1167,8 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final authService = Provider.of<AuthService>(context, listen: false);
+    final authService = Provider.of<AuthService>(context);
+    final bool isWfhDay = authService.isWfhToday;
 
     return Column(
       children: [
@@ -1194,12 +1205,16 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                   Row(
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.qr_code_2_rounded, color: Colors.white),
-                        tooltip: 'My Smart Badge',
+                        icon: Icon(isWfhDay ? Icons.home_work_rounded : Icons.qr_code_2_rounded, color: Colors.white),
+                        tooltip: isWfhDay ? 'WFH Attendance Punch' : 'My Smart Badge',
                         onPressed: () {
                           Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (context) => const MyAttendanceBadgeScreen()),
+                            MaterialPageRoute(
+                              builder: (context) => MyAttendanceBadgeScreen(
+                                onBackToHome: () => Navigator.of(context).pop(),
+                              ),
+                            ),
                           );
                         },
                       ),
@@ -1237,14 +1252,18 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
           ),
         ),
 
-        // Smart Badge Quick Action Banner
+        // Smart Badge / WFH Punch Quick Action Banner
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: InkWell(
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const MyAttendanceBadgeScreen()),
+                MaterialPageRoute(
+                  builder: (context) => MyAttendanceBadgeScreen(
+                    onBackToHome: () => Navigator.of(context).pop(),
+                  ),
+                ),
               );
             },
             borderRadius: BorderRadius.circular(16),
@@ -1257,10 +1276,16 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.35)),
+                border: Border.all(
+                  color: isWfhDay 
+                    ? const Color(0xFF10B981).withOpacity(0.35) 
+                    : const Color(0xFF38BDF8).withOpacity(0.35),
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF38BDF8).withOpacity(0.12),
+                    color: isWfhDay 
+                      ? const Color(0xFF10B981).withOpacity(0.12) 
+                      : const Color(0xFF38BDF8).withOpacity(0.12),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -1271,51 +1296,78 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF6366F1), Color(0xFF06B6D4)],
+                      gradient: LinearGradient(
+                        colors: isWfhDay 
+                          ? [const Color(0xFF059669), const Color(0xFF10B981)] 
+                          : [const Color(0xFF6366F1), const Color(0xFF06B6D4)],
                       ),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.qr_code_2_rounded, color: Colors.white, size: 24),
+                    child: Icon(
+                      isWfhDay ? Icons.home_work_rounded : Icons.qr_code_2_rounded, 
+                      color: Colors.white, 
+                      size: 24,
+                    ),
                   ),
                   const SizedBox(width: 14),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            Text(
-                              'My Attendance Badge',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
+                            Flexible(
+                              child: Text(
+                                isWfhDay ? 'WFH Attendance' : 'My Attendance Badge',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            SizedBox(width: 6),
-                            Text(
-                              '• LIVE',
-                              style: TextStyle(
-                                color: Color(0xFF10B981),
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: isWfhDay 
+                                  ? const Color(0xFF10B981).withOpacity(0.2) 
+                                  : const Color(0xFF06B6D4).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                isWfhDay ? '• REMOTE' : '• LIVE',
+                                style: TextStyle(
+                                  color: isWfhDay ? const Color(0xFF34D399) : const Color(0xFF38BDF8),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                             ),
                           ],
                         ),
-                        SizedBox(height: 2),
+                        const SizedBox(height: 2),
                         Text(
-                          'Tap to scan at front desk kiosk',
-                          style: TextStyle(
+                          isWfhDay 
+                            ? 'Tap to punch check-in / check-out' 
+                            : 'Tap to scan at front desk kiosk',
+                          style: const TextStyle(
                             color: Color(0xFF94A3B8),
                             fontSize: 12,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
-                  const Icon(Icons.chevron_right_rounded, color: Color(0xFF38BDF8), size: 22),
+                  Icon(
+                    Icons.chevron_right_rounded, 
+                    color: isWfhDay ? const Color(0xFF34D399) : const Color(0xFF38BDF8), 
+                    size: 22,
+                  ),
                 ],
               ),
             ),

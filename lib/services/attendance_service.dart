@@ -943,6 +943,78 @@ class AttendanceService with ChangeNotifier {
     return responseBody;
   }
 
+  /// Fetch current user's WFH attendance status, work mode info, and today's punch state
+  Future<Map<String, dynamic>> getWfhStatus() async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final deviceId = await DeviceHelper.getDeviceId();
+    final deviceName = await DeviceHelper.getDeviceName();
+
+    final uri = Uri.parse(AppConfig.wfhStatus);
+
+    final response = await _client
+        .get(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': token!,
+            'x-is-mobile': 'true',
+            'x-is-mobile-app': 'true',
+            'x-device-id': deviceId,
+            'x-device-name': deviceName,
+          },
+        )
+        .timeout(const Duration(seconds: 15));
+
+    final responseBody = _decodeJsonObject(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(responseBody['message'] ?? 'Failed to load WFH status (${response.statusCode})');
+    }
+    return responseBody;
+  }
+
+  /// Record WFH Attendance Check-In or Check-Out punch with GPS coordinates & device binding
+  Future<Map<String, dynamic>> wfhPunch({
+    required String action,
+    double? latitude,
+    double? longitude,
+    String? notes,
+  }) async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final deviceId = await DeviceHelper.getDeviceId();
+    final deviceName = await DeviceHelper.getDeviceName();
+
+    final response = await _client
+        .post(
+          Uri.parse(AppConfig.wfhPunch),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': token!,
+            'x-is-mobile': 'true',
+            'x-is-mobile-app': 'true',
+            'x-device-id': deviceId,
+            'x-device-name': deviceName,
+          },
+          body: json.encode({
+            'action': action,
+            if (latitude != null) 'latitude': latitude,
+            if (longitude != null) 'longitude': longitude,
+            if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    final responseBody = _decodeJsonObject(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(responseBody['message'] ?? 'WFH punch failed (${response.statusCode})');
+    }
+    notifyListeners();
+    return responseBody;
+  }
+
   Map<String, dynamic> _decodeJsonObject(String body) {
     try {
       final decoded = json.decode(body);

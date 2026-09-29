@@ -3,18 +3,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 import '../services/attendance_service.dart';
 import '../services/auth_service.dart';
 
 class MyAttendanceBadgeScreen extends StatefulWidget {
-  const MyAttendanceBadgeScreen({super.key});
+  final VoidCallback? onBackToHome;
+  const MyAttendanceBadgeScreen({super.key, this.onBackToHome});
 
   @override
   State<MyAttendanceBadgeScreen> createState() => _MyAttendanceBadgeScreenState();
 }
 
 class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   bool _isLoading = true;
   String? _errorMessage;
   Map<String, dynamic>? _badgeData;
@@ -22,6 +24,18 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
   int _remainingSeconds = 5;
   Timer? _countdownTimer;
   Timer? _rotationTimer;
+
+  // WFH Attendance State
+  bool _isWfhDay = false;
+  String _workMode = 'Office';
+  String? _todayDayOfWeek;
+  double? _latitude;
+  double? _longitude;
+  String? _gpsError;
+  bool _isPunching = false;
+  final TextEditingController _notesController = TextEditingController();
+  Timer? _elapsedTimer;
+  String _elapsedTime = '';
 
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -31,6 +45,7 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _pulseController = AnimationController(
       vsync: this,
@@ -42,15 +57,358 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
     );
 
     _fetchBadge();
-    _startCountdown();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _countdownTimer?.cancel();
     _rotationTimer?.cancel();
+    _elapsedTimer?.cancel();
+    _notesController.dispose();
     _pulseController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // When user returns to the app from settings, re-attempt GPS acquisition automatically
+      if (_isWfhDay && (_latitude == null || _longitude == null)) {
+        _captureLocation(promptUser: false);
+      }
+    }
+  }
+
+  Future<void> _promptEnableLocationService() async {
+    if (!mounted) return;
+    final proceed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: Color(0xFF334155)),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.location_off_rounded, color: Color(0xFFF59E0B), size: 24),
+            SizedBox(width: 10),
+            Text(
+              'Location Required',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Work From Home attendance (check-in and check-out) strictly requires location services to be enabled on your device to verify your remote attendance location.\n\nPlease turn on Location in your device settings to proceed.',
+          style: TextStyle(color: Color(0xFF94A3B8), fontSize: 14, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            icon: const Icon(Icons.settings_rounded, size: 16),
+            label: const Text('Open Location Settings'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF38BDF8),
+              foregroundColor: const Color(0xFF0F172A),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (proceed == true) {
+      await Geolocator.openLocationSettings();
+    }
+  }
+
+  Future<void> _promptOpenAppSettings() async {
+    if (!mounted) return;
+    final proceed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: Color(0xFF334155)),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.security_rounded, color: Color(0xFFEF4444), size: 24),
+            SizedBox(width: 10),
+            Text(
+              'Permission Required',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: const Text(
+          'WorkPulse requires location permission to capture your remote attendance coordinates for check-in and check-out.\n\nPlease grant Location permission in App Settings.',
+          style: TextStyle(color: Color(0xFF94A3B8), fontSize: 14, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            icon: const Icon(Icons.open_in_new_rounded, size: 16),
+            label: const Text('Open App Settings'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF38BDF8),
+              foregroundColor: const Color(0xFF0F172A),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (proceed == true) {
+      await Geolocator.openAppSettings();
+    }
+  }
+
+  Future<bool> _captureLocation({bool promptUser = false}) async {
+    if (!mounted) return false;
+    setState(() {
+      _gpsError = null;
+    });
+
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          setState(() {
+            _latitude = null;
+            _longitude = null;
+            _gpsError = 'Location services disabled. Please enable GPS in device settings.';
+          });
+        }
+        if (promptUser) {
+          await _promptEnableLocationService();
+        }
+        return false;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            setState(() {
+              _latitude = null;
+              _longitude = null;
+              _gpsError = 'Location permission denied. Cannot capture attendance coordinates.';
+            });
+          }
+          return false;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          setState(() {
+            _latitude = null;
+            _longitude = null;
+            _gpsError = 'Location permissions permanently denied. Please enable in app settings.';
+          });
+        }
+        if (promptUser) {
+          await _promptOpenAppSettings();
+        }
+        return false;
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10),
+      );
+
+      if (!mounted) return false;
+      setState(() {
+        _latitude = position.latitude;
+        _longitude = position.longitude;
+        _gpsError = null;
+      });
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      setState(() {
+        _latitude = null;
+        _longitude = null;
+        _gpsError = 'Could not acquire GPS: ${e.toString().replaceAll('Exception: ', '')}';
+      });
+      return false;
+    }
+  }
+
+  void _startElapsedTimer(String? checkInTimeStr) {
+    _elapsedTimer?.cancel();
+    if (checkInTimeStr == null || checkInTimeStr.isEmpty) {
+      setState(() => _elapsedTime = '');
+      return;
+    }
+
+    void updateElapsed() {
+      DateTime? startTime;
+      try {
+        startTime = DateTime.tryParse(checkInTimeStr);
+      } catch (_) {}
+
+      if (startTime != null && startTime.isUtc) {
+        final nowUtc = DateTime.now().toUtc();
+        var diff = nowUtc.difference(startTime);
+        if (diff.isNegative) diff = Duration.zero;
+        final hrs = diff.inHours.toString().padLeft(2, '0');
+        final mins = (diff.inMinutes % 60).toString().padLeft(2, '0');
+        final secs = (diff.inSeconds % 60).toString().padLeft(2, '0');
+        if (mounted) {
+          setState(() {
+            _elapsedTime = '$hrs:$mins:$secs';
+          });
+        }
+        return;
+      }
+
+      final now = DateTime.now();
+      if (startTime == null) {
+        final parts = checkInTimeStr.split(' ');
+        if (parts.length >= 2) {
+          try {
+            final timeParts = parts[0].split(':');
+            int hour = int.parse(timeParts[0]);
+            final minute = int.parse(timeParts[1]);
+            final isPm = parts[1].toUpperCase() == 'PM';
+            if (isPm && hour < 12) hour += 12;
+            if (!isPm && hour == 12) hour = 0;
+            startTime = DateTime(now.year, now.month, now.day, hour, minute);
+          } catch (_) {}
+        }
+      }
+
+      if (startTime != null) {
+        var diff = DateTime.now().difference(startTime);
+        if (diff.isNegative) diff = Duration.zero;
+        final hrs = diff.inHours.toString().padLeft(2, '0');
+        final mins = (diff.inMinutes % 60).toString().padLeft(2, '0');
+        final secs = (diff.inSeconds % 60).toString().padLeft(2, '0');
+        if (mounted) {
+          setState(() {
+            _elapsedTime = '$hrs:$mins:$secs';
+          });
+        }
+      }
+    }
+
+    updateElapsed();
+    _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) => updateElapsed());
+  }
+
+  Future<void> _handleWfhPunch(String action) async {
+    if (!mounted) return;
+    setState(() => _isPunching = true);
+
+    try {
+      // STRICT LOCATION ENFORCEMENT: Ensure location service is active and GPS captured for BOTH check-in and check-out
+      final captured = await _captureLocation(promptUser: true);
+      if (!captured || _latitude == null || _longitude == null || (_latitude == 0 && _longitude == 0)) {
+        if (!mounted) return;
+        HapticFeedback.heavyImpact();
+        final actionVerb = action == 'CHECK_IN' ? 'check in' : 'check out';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.location_off_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _gpsError ?? 'Location required: Please enable device location in settings to $actionVerb.',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFFEF4444),
+            action: SnackBarAction(
+              label: 'Settings',
+              textColor: Colors.white,
+              onPressed: () => _captureLocation(promptUser: true),
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        return; // Strictly abort check-in or check-out without location
+      }
+
+      if (!mounted) return;
+      final service = Provider.of<AttendanceService>(context, listen: false);
+      final res = await service.wfhPunch(
+        action: action,
+        latitude: _latitude,
+        longitude: _longitude,
+        notes: _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null,
+      );
+
+      if (!mounted) return;
+      HapticFeedback.mediumImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res['message']?.toString() ?? 'Punch recorded successfully!'),
+          backgroundColor: const Color(0xFF10B981),
+        ),
+      );
+      _notesController.clear();
+
+      // Immediately and optimistically update state so Checkout button appears with zero delay
+      final nextStatus = res['todayStatus']?.toString() ?? (action == 'CHECK_IN' ? 'CHECKED_IN' : 'COMPLETED');
+      final timeStr = res['time']?.toString() ?? res['timestamp']?.toString();
+      final isoStr = res['checkInIso']?.toString() ?? res['log']?['check_in_time']?.toString();
+
+      setState(() {
+        _badgeData = {
+          ...?_badgeData,
+          'todayStatus': nextStatus,
+          if (action == 'CHECK_IN') ...{
+            'checkInTime': timeStr,
+            'checkInIso': isoStr,
+          } else ...{
+            'checkOutTime': timeStr,
+          },
+        };
+      });
+
+      if (action == 'CHECK_IN') {
+        _startElapsedTimer(isoStr ?? timeStr);
+      } else {
+        _elapsedTimer?.cancel();
+        setState(() => _elapsedTime = '');
+      }
+
+      // Re-fetch badge silently to ensure server synchronization
+      await _fetchBadge(silent: true);
+    } catch (e) {
+      if (!mounted) return;
+      HapticFeedback.heavyImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: const Color(0xFFEF4444),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isPunching = false);
+    }
   }
 
   Future<void> _fetchBadge({bool silent = false}) async {
@@ -82,12 +440,21 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
             ? Map<String, dynamic>.from(response['employee'])
             : <String, dynamic>{};
 
-        final qr = response['qrPayload']?.toString() ??
-            badge['qrPayload']?.toString() ??
-            '';
+        final String mode = response['workMode']?.toString() ?? badge['workMode']?.toString() ?? 'Office';
+        final bool isWfh = response['isWfhDay'] == true || badge['isWfhDay'] == true;
+        final String? dow = response['todayDayOfWeek']?.toString() ?? badge['todayDayOfWeek']?.toString();
+
+        final qr = isWfh
+            ? ''
+            : (response['qrPayload']?.toString() ?? badge['qrPayload']?.toString() ?? '');
 
         final dynamic ttlVal = response['ttlSeconds'] ?? badge['ttlSeconds'] ?? 5;
         final int ttl = (ttlVal is num) ? ttlVal.toInt() : int.tryParse(ttlVal.toString()) ?? 5;
+
+        final todayStatus = response['todayStatus'] ?? badge['todayStatus'] ?? 'NOT_CHECKED_IN';
+        final checkInTime = response['checkInTime'] ?? badge['checkInTime'];
+        final checkOutTime = response['checkOutTime'] ?? badge['checkOutTime'];
+        final checkInIso = response['checkInIso'] ?? badge['checkInIso'];
 
         final badgeData = <String, dynamic>{
           'staffId': emp['staffId'] ?? badge['staffId'] ?? response['staffId'],
@@ -96,23 +463,55 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
           'role': emp['role'] ?? badge['role'] ?? response['role'],
           'department': emp['department'] ?? badge['department'] ?? response['department'],
           'avatarUrl': emp['avatarUrl'] ?? badge['avatarUrl'] ?? response['avatarUrl'],
-          'todayStatus': response['todayStatus'] ?? badge['todayStatus'] ?? 'NOT_CHECKED_IN',
-          'checkInTime': response['checkInTime'] ?? badge['checkInTime'],
-          'checkOutTime': response['checkOutTime'] ?? badge['checkOutTime'],
+          'todayStatus': todayStatus,
+          'checkInTime': checkInTime,
+          'checkOutTime': checkOutTime,
+          'checkInIso': checkInIso,
           'qrPayload': qr,
           'expiresAt': response['expiresAt'] ?? badge['expiresAt'],
           'ttlSeconds': ttl,
+          'isWfhDay': isWfh,
+          'workMode': mode,
+          'todayDayOfWeek': dow,
         };
+
+        final List<String>? days = response['hybridOfficeDays'] is List
+            ? (response['hybridOfficeDays'] as List).map((e) => e.toString()).toList()
+            : (badge['hybridOfficeDays'] is List
+                ? (badge['hybridOfficeDays'] as List).map((e) => e.toString()).toList()
+                : null);
+
+        try {
+          final auth = Provider.of<AuthService>(context, listen: false);
+          auth.updateWorkMode(mode, days);
+        } catch (_) {}
 
         setState(() {
           _badgeData = badgeData;
           _qrPayload = qr;
+          _isWfhDay = isWfh;
+          _workMode = mode;
+          _todayDayOfWeek = dow;
           if (!silent) {
             _remainingSeconds = ttl > 0 ? ttl : 5;
           }
           _isLoading = false;
           _errorMessage = null;
         });
+
+        if (isWfh) {
+          // On WFH days, disable QR countdown timer
+          _countdownTimer?.cancel();
+          // Automatically capture GPS location
+          _captureLocation();
+          // If already checked in, start elapsed timer
+          if (todayStatus == 'CHECKED_IN') {
+            _startElapsedTimer(checkInIso?.toString() ?? checkInTime?.toString());
+          }
+        } else {
+          // Office day: Start 5s QR auto-rotation
+          _startCountdown();
+        }
       } else {
         if (!silent) {
           setState(() {
@@ -161,9 +560,9 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
       case 'CHECKED_IN':
         return const Color(0xFF10B981);
       case 'COMPLETED':
-        return const Color(0xFF8B5CF6);
+        return const Color(0xFF38BDF8);
       case 'ON_LEAVE':
-        return const Color(0xFFEF4444);
+        return const Color(0xFFA855F7);
       case 'NOT_CHECKED_IN':
       default:
         return const Color(0xFFF59E0B);
@@ -200,6 +599,7 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
     final checkOutTime = _badgeData?['checkOutTime']?.toString();
 
     final statusColor = _getStatusColor(todayStatus);
+    final bool isViewingWfh = _isWfhDay;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
@@ -208,11 +608,17 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else if (widget.onBackToHome != null) {
+              widget.onBackToHome!();
+            }
+          },
         ),
-        title: const Text(
-          'My Attendance Badge',
-          style: TextStyle(
+        title: Text(
+          isViewingWfh ? (_workMode == 'Hybrid' ? 'Hybrid Attendance' : 'WFH Attendance') : 'My Attendance Badge',
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -223,7 +629,7 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
-            tooltip: 'Refresh Badge',
+            tooltip: 'Refresh',
             onPressed: () {
               HapticFeedback.selectionClick();
               _fetchBadge();
@@ -240,185 +646,468 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           child: Column(
             children: [
-              // Main Digital Badge Card
+              // Main Card Container
               Container(
                 width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(
-                      color: const Color(0xFF38BDF8).withValues(alpha: 0.35),
-                      width: 1.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF38BDF8).withValues(alpha: 0.12),
-                        blurRadius: 30,
-                        spreadRadius: 2,
-                        offset: const Offset(0, 8),
-                      ),
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
                   ),
-                  child: Column(
-                    children: [
-                      // Badge Header Ribbon
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF4F46E5), Color(0xFF06B6D4)],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                          ),
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(26),
-                            topRight: Radius.circular(26),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF4F46E5).withValues(alpha: 0.3),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(
+                    color: isViewingWfh
+                        ? const Color(0xFF38BDF8).withValues(alpha: 0.45)
+                        : const Color(0xFF10B981).withValues(alpha: 0.35),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: (isViewingWfh ? const Color(0xFF38BDF8) : const Color(0xFF10B981)).withValues(alpha: 0.12),
+                      blurRadius: 30,
+                      spreadRadius: 2,
+                      offset: const Offset(0, 8),
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    // Header Ribbon
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: isViewingWfh
+                              ? [const Color(0xFF2563EB), const Color(0xFF0284C7)]
+                              : [const Color(0xFF059669), const Color(0xFF0D9488)],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
                         ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(
-                                Icons.verified_user_rounded,
-                                color: Colors.white,
-                                size: 18,
-                              ),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(26),
+                          topRight: Radius.circular(26),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (isViewingWfh ? const Color(0xFF2563EB) : const Color(0xFF059669)).withValues(alpha: 0.3),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                            const SizedBox(width: 10),
-                            const Text(
-                              'WORKPULSE SMART BADGE',
-                              style: TextStyle(
+                            child: Icon(
+                              isViewingWfh ? Icons.home_work_rounded : Icons.verified_user_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _workMode == 'Hybrid'
+                                  ? (isViewingWfh
+                                      ? (_todayDayOfWeek != null ? 'HYBRID WFH ($_todayDayOfWeek)' : 'HYBRID WFH ATTENDANCE')
+                                      : (_todayDayOfWeek != null ? 'HYBRID IN-OFFICE ($_todayDayOfWeek)' : 'HYBRID IN-OFFICE BADGE'))
+                                  : (_isWfhDay ? 'WORK FROM HOME ATTENDANCE' : 'WORKPULSE SMART BADGE'),
+                              style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 13,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w800,
-                                letterSpacing: 1.2,
+                                letterSpacing: 1.1,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              employeeCode,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const Spacer(),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.25),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                employeeCode,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    Padding(
+                      padding: const EdgeInsets.all(22),
+                      child: Column(
+                        children: [
+                          // Employee Profile Row
+                          Row(
+                            children: [
+                              Container(
+                                width: 54,
+                                height: 54,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: _isWfhDay
+                                        ? [const Color(0xFF38BDF8), const Color(0xFF2563EB)]
+                                        : [const Color(0xFF10B981), const Color(0xFF059669)],
+                                  ),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: (_isWfhDay ? const Color(0xFF38BDF8) : const Color(0xFF10B981)).withValues(alpha: 0.3),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    employeeName.isNotEmpty ? employeeName[0].toUpperCase() : 'E',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      Padding(
-                        padding: const EdgeInsets.all(22),
-                        child: Column(
-                          children: [
-                            // Employee Profile Row
-                            Row(
-                              children: [
-                                Container(
-                                  width: 54,
-                                  height: 54,
-                                  decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: [Color(0xFF6366F1), Color(0xFFA855F7)],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white24, width: 2),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: const Color(0xFF6366F1).withValues(alpha: 0.4),
-                                        blurRadius: 12,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      employeeName.isNotEmpty
-                                          ? employeeName.trim().split(' ').map((e) => e.isNotEmpty ? e[0] : '').take(2).join().toUpperCase()
-                                          : 'WP',
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      employeeName,
                                       style: const TextStyle(
                                         color: Colors.white,
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w800,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.2,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      employeeRole,
+                                      style: TextStyle(
+                                        color: _isWfhDay ? const Color(0xFF38BDF8) : const Color(0xFF34D399),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
-                                  ),
-                                ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        employeeName,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 2),
+                                    if (employeeEmail.isNotEmpty)
                                       Text(
                                         employeeEmail,
-                                        style: TextStyle(
-                                          color: Colors.grey.shade400,
-                                          fontSize: 12,
+                                        style: const TextStyle(
+                                          color: Color(0xFF64748B),
+                                          fontSize: 10,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        employeeRole,
-                                        style: const TextStyle(
-                                          color: Color(0xFF38BDF8),
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 16),
+                          const Divider(color: Color(0xFF334155), height: 1),
+                          const SizedBox(height: 16),
+
+                          // Status Badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: statusColor.withValues(alpha: 0.4),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: statusColor,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _getStatusText(todayStatus, checkInTime, checkOutTime),
+                                  style: TextStyle(
+                                    color: statusColor,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ],
                             ),
+                          ),
 
-                            const SizedBox(height: 18),
-                            const Divider(color: Color(0xFF334155), height: 1),
-                            const SizedBox(height: 20),
+                          const SizedBox(height: 18),
 
-                            // Dynamic QR Container
+                          // =========================================================
+                          // CONDITIONAL: WFH PUNCH vs IN-OFFICE QR BADGE
+                          // =========================================================
+                          if (isViewingWfh) ...[
+                            // ─── WFH PUNCH UI (DO NOT SHOW QR CODE) ───
+
+                            // Live Elapsed Stopwatch if checked in
+                            if (todayStatus == 'CHECKED_IN' && _elapsedTime.isNotEmpty) ...[
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFF047857), Color(0xFF0D9488)],
+                                  ),
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF10B981).withValues(alpha: 0.25),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  children: [
+                                    const Text(
+                                      'SESSION DURATION',
+                                      style: TextStyle(
+                                        color: Color(0xFFA7F3D0),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 1.2,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _elapsedTime,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.w900,
+                                        fontFamily: 'monospace',
+                                        letterSpacing: 1.5,
+                                      ),
+                                    ),
+                                    if (checkInTime != null)
+                                      Text(
+                                        'In at $checkInTime',
+                                        style: const TextStyle(
+                                          color: Color(0xFFD1FAE5),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+
+                            // Work Notes / Summary Text Field
+                            if (todayStatus != 'COMPLETED' && todayStatus != 'ON_LEAVE') ...[
+                              TextField(
+                                controller: _notesController,
+                                style: const TextStyle(color: Colors.white, fontSize: 13),
+                                decoration: InputDecoration(
+                                  hintText: todayStatus == 'CHECKED_IN'
+                                      ? 'Optional checkout notes / summary...'
+                                      : 'Optional: What are you working on today?...',
+                                  hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                                  filled: true,
+                                  fillColor: const Color(0xFF0F172A),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: const BorderSide(color: Color(0xFF334155)),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: const BorderSide(color: Color(0xFF334155)),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: const BorderSide(color: Color(0xFF38BDF8), width: 1.5),
+                                  ),
+                                ),
+                                maxLines: 2,
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+
+                            // Action Button: Clean Check In / Check Out
+                            if (todayStatus == 'NOT_CHECKED_IN')
+                              SizedBox(
+                                width: double.infinity,
+                                height: 52,
+                                child: ElevatedButton(
+                                  onPressed: _isPunching ? null : () => _handleWfhPunch('CHECK_IN'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF10B981),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    elevation: 8,
+                                    shadowColor: const Color(0xFF10B981).withValues(alpha: 0.4),
+                                  ),
+                                  child: _isPunching
+                                      ? const SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                                        )
+                                      : const Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.login_rounded, size: 20),
+                                            SizedBox(width: 8),
+                                            Text(
+                                              'Check In',
+                                              style: TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: 0.3,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                ),
+                              )
+                            else if (todayStatus == 'CHECKED_IN')
+                              SizedBox(
+                                width: double.infinity,
+                                height: 52,
+                                child: ElevatedButton(
+                                  onPressed: _isPunching ? null : () => _handleWfhPunch('CHECK_OUT'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFEF4444),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    elevation: 8,
+                                    shadowColor: const Color(0xFFEF4444).withValues(alpha: 0.4),
+                                  ),
+                                  child: _isPunching
+                                      ? const SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                                        )
+                                      : const Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.logout_rounded, size: 20),
+                                            SizedBox(width: 8),
+                                            Text(
+                                              'Check Out',
+                                              style: TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: 0.3,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                ),
+                              )
+                            else if (todayStatus == 'COMPLETED')
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1E293B),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: const Color(0xFF334155)),
+                                ),
+                                child: const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.check_circle_rounded, color: Color(0xFF38BDF8), size: 18),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Attendance Complete for Today',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1E293B),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: const Color(0xFF334155)),
+                                ),
+                                child: const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.info_outline_rounded, color: Color(0xFFA855F7), size: 18),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'You are on Approved Leave Today',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                            const SizedBox(height: 14),
+                            // Security info
+                            const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.shield_rounded, color: Color(0xFF38BDF8), size: 14),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Bound Device & GPS coordinates logged securely',
+                                  style: TextStyle(
+                                    color: Color(0xFF64748B),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ] else ...[
+                            // ─── OFFICE DYNAMIC QR CODE VIEW (OFFICE DAYS ONLY) ───
                             Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
@@ -550,108 +1239,58 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                                     color: Color(0xFF38BDF8),
                                     fontSize: 13,
                                     fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF334155),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Text(
+                                    'Anti-Replay',
+                                    style: TextStyle(
+                                      color: Color(0xFF94A3B8),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
-
-                            const SizedBox(height: 10),
-
-                            // Progress Bar
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: LinearProgressIndicator(
-                                value: (_remainingSeconds / 5.0).clamp(0.0, 1.0),
-                                minHeight: 6,
-                                backgroundColor: const Color(0xFF334155),
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  _remainingSeconds > 2
-                                      ? const Color(0xFF38BDF8)
-                                      : const Color(0xFFF59E0B),
-                                ),
-                              ),
-                            ),
-
-                            const SizedBox(height: 18),
-
-                            // Today's Status Pill
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: statusColor.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: statusColor.withValues(alpha: 0.4)),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                   Icon(
-                                    todayStatus == 'CHECKED_IN'
-                                        ? Icons.login_rounded
-                                        : todayStatus == 'COMPLETED'
-                                            ? Icons.check_circle_rounded
-                                            : todayStatus == 'ON_LEAVE'
-                                                ? Icons.event_busy_rounded
-                                                : Icons.access_time_rounded,
-                                    color: statusColor,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Flexible(
-                                    child: Text(
-                                      _getStatusText(todayStatus, checkInTime, checkOutTime),
-                                      style: TextStyle(
-                                        color: statusColor,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (todayStatus == 'ON_LEAVE')
-                              Padding(
-                                padding: const EdgeInsets.only(top: 10),
-                                child: Text(
-                                  'You are on approved leave today. Attendance check-in is not permitted.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.red.shade300,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
                           ],
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+              ),
 
               const SizedBox(height: 20),
 
-              // Scanning Instructions Card
+              // Instructions / Help card
               Container(
+                width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B).withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF334155).withValues(alpha: 0.5)),
+                  color: const Color(0xFF1E293B).withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: const Color(0xFF334155),
+                    width: 1,
+                  ),
                 ),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
+                    Row(
                       children: [
-                        Icon(Icons.info_outline_rounded, color: Color(0xFF38BDF8), size: 18),
-                        SizedBox(width: 8),
+                        const Icon(Icons.info_outline_rounded, color: Color(0xFF38BDF8), size: 18),
+                        const SizedBox(width: 8),
                         Text(
-                          'How to Check In / Check Out:',
-                          style: TextStyle(
+                          _isWfhDay ? 'WFH Attendance Instructions:' : 'How to Check In / Check Out:',
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
@@ -660,11 +1299,19 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                       ],
                     ),
                     const SizedBox(height: 10),
-                    _buildInstructionRow('1', 'Hold this QR badge ~15-20 cm in front of the office kiosk tablet camera.'),
-                    const SizedBox(height: 6),
-                    _buildInstructionRow('2', 'The kiosk will beep and automatically log your attendance in <100ms.'),
-                    const SizedBox(height: 6),
-                    _buildInstructionRow('3', 'For maximum security, codes auto-rotate every 5s. Screenshots will be rejected.'),
+                    if (_isWfhDay) ...[
+                      _buildInstructionRow('1', 'Tap Check-In when you begin work. GPS coordinates are recorded automatically.'),
+                      const SizedBox(height: 6),
+                      _buildInstructionRow('2', 'Add an optional work note or task summary when checking out.'),
+                      const SizedBox(height: 6),
+                      _buildInstructionRow('3', 'Checkout logs are automatically routed to your reporting manager for confirmation.'),
+                    ] else ...[
+                      _buildInstructionRow('1', 'Hold this QR badge ~15-20 cm in front of the office kiosk tablet camera.'),
+                      const SizedBox(height: 6),
+                      _buildInstructionRow('2', 'The kiosk will beep and automatically log your attendance in <100ms.'),
+                      const SizedBox(height: 6),
+                      _buildInstructionRow('3', 'For maximum security, codes auto-rotate every 5s. Screenshots will be rejected.'),
+                    ],
                   ],
                 ),
               ),

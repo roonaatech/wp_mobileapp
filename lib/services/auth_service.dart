@@ -81,6 +81,46 @@ class AuthService with ChangeNotifier {
   String? _currentPassword;
   bool _canAccessAttendancePortal = false;
   bool _isServiceAccount = false;
+  String? _workMode;
+  List<String> _hybridOfficeDays = [];
+
+  String get workMode => _workMode ?? 'Office';
+  List<String> get hybridOfficeDays => List.unmodifiable(_hybridOfficeDays);
+
+  bool get isWfhToday {
+    final mode = (_workMode ?? 'Office').trim().toLowerCase();
+    if (mode == 'work from home' || mode == 'wfh') return true;
+    if (mode == 'office' || mode == 'regular') return false;
+    if (mode == 'hybrid') {
+      const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      final todayWeekday = weekdays[ISTHelper.now().weekday - 1];
+      final isOfficeDay = _hybridOfficeDays.any((d) {
+        final dayStr = d.trim().toLowerCase();
+        return dayStr == todayWeekday ||
+            (dayStr.length >= 3 && todayWeekday.startsWith(dayStr)) ||
+            (todayWeekday.length >= 3 && dayStr.startsWith(todayWeekday));
+      });
+      return !isOfficeDay;
+    }
+    return false;
+  }
+
+  void updateWorkMode(String mode, [List<String>? hybridDays]) async {
+    _workMode = mode;
+    if (hybridDays != null) {
+      _hybridOfficeDays = List<String>.from(hybridDays);
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.containsKey('userData')) {
+        final userData = json.decode(prefs.getString('userData')!);
+        userData['work_mode'] = _workMode;
+        userData['hybrid_office_days'] = _hybridOfficeDays;
+        await prefs.setString('userData', json.encode(userData));
+      }
+    } catch (_) {}
+    notifyListeners();
+  }
 
   bool get mustChangePassword {
     return _mustChangePassword;
@@ -139,6 +179,8 @@ class AuthService with ChangeNotifier {
         _mustChangePassword = false;
         _canAccessAttendancePortal = false;
         _isServiceAccount = false;
+        _workMode = null;
+        _hybridOfficeDays = [];
         await prefs.remove('userData');
         await prefs.remove('token');
         await prefs.remove('userId');
@@ -171,6 +213,12 @@ class AuthService with ChangeNotifier {
         _mustChangePassword = userData['mustChangePassword'] ?? false;
         _canAccessAttendancePortal = userData['can_access_attendance_portal'] ?? false;
         _isServiceAccount = userData['isServiceAccount'] ?? false;
+        _workMode = userData['work_mode']?.toString() ?? 'Office';
+        if (userData['hybrid_office_days'] is List) {
+          _hybridOfficeDays = (userData['hybrid_office_days'] as List).map((e) => e.toString()).toList();
+        } else {
+          _hybridOfficeDays = [];
+        }
         _userEmail = userData['email'];
         final storedName = userData['userName'] ?? prefs.getString('userName');
         if (storedName != null && storedName.toString().trim().isNotEmpty) {
@@ -325,6 +373,12 @@ class AuthService with ChangeNotifier {
       _mustChangePassword = responseData['mustChangePassword'] ?? false;
       _canAccessAttendancePortal = responseData['can_access_attendance_portal'] == true;
       _isServiceAccount = responseData['isServiceAccount'] == true;
+      _workMode = responseData['work_mode']?.toString() ?? 'Office';
+      if (responseData['hybrid_office_days'] is List) {
+        _hybridOfficeDays = (responseData['hybrid_office_days'] as List).map((e) => e.toString()).toList();
+      } else {
+        _hybridOfficeDays = [];
+      }
       
       final rawExtId = responseData['userid'];
       if (rawExtId != null) {
@@ -347,6 +401,8 @@ class AuthService with ChangeNotifier {
         'mustChangePassword': _mustChangePassword,
         'can_access_attendance_portal': _canAccessAttendancePortal,
         'isServiceAccount': _isServiceAccount,
+        'work_mode': _workMode,
+        'hybrid_office_days': _hybridOfficeDays,
       });
       await prefs.setString('userData', userData);
       await prefs.setString('token', _token!);
