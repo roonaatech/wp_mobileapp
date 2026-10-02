@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 import '../services/attendance_service.dart';
 import '../utils/ist_helper.dart';
 import '../utils/dialogs.dart';
@@ -25,14 +24,36 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
   bool _isOnDuty = false;
   int? _activeOnDutyId;
   DateTime? _startTime;
+  bool _isTodayHoliday = false;
+  String? _todayHolidayName;
 
   @override
   void initState() {
     super.initState();
+    _checkTodayHoliday();
     if (widget.existingLog != null) {
       _initializeForEdit();
     } else {
       _checkActiveOnDuty();
+    }
+  }
+
+  Future<void> _checkTodayHoliday() async {
+    try {
+      final service = Provider.of<AttendanceService>(context, listen: false);
+      final map = await service.getHolidaysMap();
+      final now = ISTHelper.now();
+      final todayStr = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      if (map.containsKey(todayStr)) {
+        if (mounted) {
+          setState(() {
+            _isTodayHoliday = true;
+            _todayHolidayName = map[todayStr];
+          });
+        }
+      }
+    } catch (e) {
+      print('Error checking holiday in on-duty: $e');
     }
   }
 
@@ -132,6 +153,10 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
   }
 
   Future<void> _startOnDuty() async {
+    if (_isTodayHoliday) {
+      showErrorDialog(context, 'Today is a company holiday ($_todayHolidayName). On-duty visits cannot be started today.');
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     
     setState(() => _isLoading = true);
@@ -238,6 +263,34 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_isTodayHoliday && widget.existingLog == null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF59E0B)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.celebration, color: Color(0xFFB45309), size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Today is a company holiday ($_todayHolidayName). On-duty visits cannot be started today.',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF92400E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           TextFormField(
             controller: _clientController,
             decoration: InputDecoration(
@@ -309,7 +362,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
           ),
           const SizedBox(height: 24),
           ElevatedButton(
-            onPressed: _isLoading ? null : (widget.existingLog != null ? _updateOnDuty : _startOnDuty),
+            onPressed: (_isLoading || (_isTodayHoliday && widget.existingLog == null)) ? null : (widget.existingLog != null ? _updateOnDuty : _startOnDuty),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF3B82F6),
               foregroundColor: Colors.white,

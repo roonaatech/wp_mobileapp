@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../services/auth_service.dart';
 import '../services/attendance_service.dart';
 import '../utils/dialogs.dart';
@@ -239,6 +240,9 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
   List<dynamic> _filteredLeaves = [];
   int _selectedYear = ISTHelper.now().year;
   Set<int> _availableYears = {};
+  Map<String, String> _holidaysMap = {};
+  bool _isTodayHoliday = false;
+  String? _todayHolidayName;
   final ScrollController _statsScrollController = ScrollController();
   Map<String, dynamic> _stats = {
     'totalLeaves': 0,
@@ -286,6 +290,12 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
       final service = Provider.of<AttendanceService>(context, listen: false);
       final leaves = await service.getMyLeaves();
       final stats = await service.getDashboardStats();
+      Map<String, String> holidaysMap = {};
+      try {
+        holidaysMap = await service.getHolidaysMap();
+      } catch (_) {}
+      final todayStr = DateFormat('yyyy-MM-dd').format(ISTHelper.now());
+      final holidayName = holidaysMap[todayStr];
       
       if (mounted) {
         // Extract available years from leaves data
@@ -314,6 +324,9 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
         setState(() {
           _leaves = leaves;
           _stats = stats;
+          _holidaysMap = holidaysMap;
+          _isTodayHoliday = holidayName != null;
+          _todayHolidayName = holidayName;
           _availableYears = years;
           _selectedYear = ISTHelper.now().year;
           // Always default to Pending filter on home page
@@ -1277,15 +1290,19 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                 ),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: isWfhDay 
-                    ? const Color(0xFF10B981).withOpacity(0.35) 
-                    : const Color(0xFF38BDF8).withOpacity(0.35),
+                  color: _isTodayHoliday
+                    ? const Color(0xFF14B8A6).withOpacity(0.35)
+                    : (isWfhDay 
+                        ? const Color(0xFF10B981).withOpacity(0.35) 
+                        : const Color(0xFF38BDF8).withOpacity(0.35)),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: isWfhDay 
-                      ? const Color(0xFF10B981).withOpacity(0.12) 
-                      : const Color(0xFF38BDF8).withOpacity(0.12),
+                    color: _isTodayHoliday
+                      ? const Color(0xFF14B8A6).withOpacity(0.15)
+                      : (isWfhDay 
+                          ? const Color(0xFF10B981).withOpacity(0.12) 
+                          : const Color(0xFF38BDF8).withOpacity(0.12)),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -1297,14 +1314,18 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: isWfhDay 
-                          ? [const Color(0xFF059669), const Color(0xFF10B981)] 
-                          : [const Color(0xFF6366F1), const Color(0xFF06B6D4)],
+                        colors: _isTodayHoliday
+                          ? [const Color(0xFF0D9488), const Color(0xFF14B8A6)]
+                          : (isWfhDay 
+                              ? [const Color(0xFF059669), const Color(0xFF10B981)] 
+                              : [const Color(0xFF6366F1), const Color(0xFF06B6D4)]),
                       ),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
-                      isWfhDay ? Icons.home_work_rounded : Icons.qr_code_2_rounded, 
+                      _isTodayHoliday
+                        ? Icons.beach_access_rounded
+                        : (isWfhDay ? Icons.home_work_rounded : Icons.qr_code_2_rounded), 
                       color: Colors.white, 
                       size: 24,
                     ),
@@ -1318,7 +1339,9 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                           children: [
                             Flexible(
                               child: Text(
-                                isWfhDay ? 'WFH Attendance' : 'My Attendance Badge',
+                                _isTodayHoliday
+                                  ? 'Company Holiday'
+                                  : (isWfhDay ? 'WFH Attendance' : 'My Attendance Badge'),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 14,
@@ -1332,15 +1355,21 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                               decoration: BoxDecoration(
-                                color: isWfhDay 
-                                  ? const Color(0xFF10B981).withOpacity(0.2) 
-                                  : const Color(0xFF06B6D4).withOpacity(0.2),
+                                color: _isTodayHoliday
+                                  ? const Color(0xFF14B8A6).withOpacity(0.2)
+                                  : (isWfhDay 
+                                      ? const Color(0xFF10B981).withOpacity(0.2) 
+                                      : const Color(0xFF06B6D4).withOpacity(0.2)),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
-                                isWfhDay ? '• REMOTE' : '• LIVE',
+                                _isTodayHoliday
+                                  ? '• HOLIDAY'
+                                  : (isWfhDay ? '• REMOTE' : '• LIVE'),
                                 style: TextStyle(
-                                  color: isWfhDay ? const Color(0xFF34D399) : const Color(0xFF38BDF8),
+                                  color: _isTodayHoliday
+                                    ? const Color(0xFF2DD4BF)
+                                    : (isWfhDay ? const Color(0xFF34D399) : const Color(0xFF38BDF8)),
                                   fontSize: 10,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -1350,9 +1379,11 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          isWfhDay 
-                            ? 'Tap to punch check-in / check-out' 
-                            : 'Tap to scan at front desk kiosk',
+                          _isTodayHoliday
+                            ? 'Today is $_todayHolidayName. Office is closed.'
+                            : (isWfhDay 
+                                ? 'Tap to punch check-in / check-out' 
+                                : 'Tap to scan at front desk kiosk'),
                           style: const TextStyle(
                             color: Color(0xFF94A3B8),
                             fontSize: 12,
@@ -1365,7 +1396,9 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                   ),
                   Icon(
                     Icons.chevron_right_rounded, 
-                    color: isWfhDay ? const Color(0xFF34D399) : const Color(0xFF38BDF8), 
+                    color: _isTodayHoliday
+                      ? const Color(0xFF2DD4BF)
+                      : (isWfhDay ? const Color(0xFF34D399) : const Color(0xFF38BDF8)), 
                     size: 22,
                   ),
                 ],

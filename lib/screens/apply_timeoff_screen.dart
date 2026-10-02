@@ -27,12 +27,14 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
   TimeOfDay _officeStartTime = const TimeOfDay(hour: 9, minute: 30);
   TimeOfDay _officeEndTime = const TimeOfDay(hour: 18, minute: 30);
   String? _todayAttendanceStatus;
+  Map<DateTime, String> _holidaysMap = {};
 
   @override
   void initState() {
     super.initState();
     _loadOfficeHours();
     _checkTodayAttendanceStatus();
+    _fetchHolidays();
     if (widget.existingRequest != null) {
       _initializeForEdit();
     } else {
@@ -42,6 +44,35 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
       _endTime = null;
       _reasonController.text = '';
     }
+  }
+
+  Future<void> _fetchHolidays() async {
+    try {
+      final service = Provider.of<AttendanceService>(context, listen: false);
+      final map = await service.getHolidaysMap();
+      final Map<DateTime, String> dtMap = {};
+      map.forEach((k, v) {
+        try {
+          final p = k.split('-');
+          if (p.length == 3) {
+            dtMap[DateTime(int.parse(p[0]), int.parse(p[1]), int.parse(p[2]))] = v;
+          }
+        } catch (_) {}
+      });
+      if (mounted) {
+        setState(() {
+          _holidaysMap = dtMap;
+        });
+      }
+    } catch (e) {
+      print('Error fetching holidays in timeoff: $e');
+    }
+  }
+
+  bool get _isSelectedDateHoliday {
+    if (_selectedDate == null) return false;
+    final d = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day);
+    return _holidaysMap.containsKey(d);
   }
 
   bool _isCurrentlyCheckedIn = false;
@@ -137,8 +168,8 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     final DateTime now = ISTHelper.now();
     DateTime initialDate = _selectedDate ?? now;
     
-    // showDatePicker fails if initialDate is disabled by selectableDayPredicate (Sunday)
-    if (initialDate.weekday == DateTime.sunday) {
+    // Advance initialDate if it falls on Sunday or a company holiday
+    while (initialDate.weekday == DateTime.sunday || _holidaysMap.containsKey(DateTime(initialDate.year, initialDate.month, initialDate.day))) {
       initialDate = initialDate.add(const Duration(days: 1));
     }
 
@@ -148,8 +179,11 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
       firstDate: now,
       lastDate: now.add(const Duration(days: 90)),
       selectableDayPredicate: (DateTime day) {
-        // Disable Sundays
-        return day.weekday != DateTime.sunday;
+        final d = DateTime(day.year, day.month, day.day);
+        // Disable Sundays and company holidays
+        if (day.weekday == DateTime.sunday) return false;
+        if (_holidaysMap.containsKey(d)) return false;
+        return true;
       },
       builder: (context, child) {
         return Theme(
@@ -169,6 +203,13 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
       if (picked.weekday == DateTime.sunday) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Sundays are not allowed for time-off requests')),
+        );
+        return;
+      }
+      final pDate = DateTime(picked.year, picked.month, picked.day);
+      if (_holidaysMap.containsKey(pDate)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Selected date is a company holiday (${_holidaysMap[pDate]}). Time-off cannot be requested.')),
         );
         return;
       }
@@ -341,6 +382,12 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
       return;
     }
 
+    if (_isSelectedDateHoliday) {
+      final d = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day);
+      showErrorDialog(context, 'Selected date is a company holiday (${_holidaysMap[d]}). Time-off cannot be requested.');
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -448,6 +495,34 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
                   ),
                 ),
               ),
+              if (_isSelectedDateHoliday)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEEBEE),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFC1272D)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: Color(0xFFC1272D), size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Selected date is a company holiday (${_holidaysMap[DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day)]}). Time-off cannot be requested.',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFC1272D),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               if (_isCurrentlyCheckedInToday)
                 Padding(
                   padding: const EdgeInsets.only(top: 8.0),
@@ -595,7 +670,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
               const SizedBox(height: 24),
 
               ElevatedButton(
-                onPressed: (_isLoading || _isOutsideOfficeHours || _isCurrentlyCheckedInToday) ? null : _submit,
+                onPressed: (_isLoading || _isOutsideOfficeHours || _isCurrentlyCheckedInToday || _isSelectedDateHoliday) ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,

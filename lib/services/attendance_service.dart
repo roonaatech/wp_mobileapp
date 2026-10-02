@@ -276,6 +276,47 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
+  /// Fetch active company holidays
+  Future<List<Map<String, dynamic>>> getHolidays({int? year, int status = 1}) async {
+    String url = '${AppConfig.holidays}?status=$status';
+    if (year != null) {
+      url += '&year=$year';
+    }
+    try {
+      final response = await _client.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'x-access-token': token!,
+        },
+      );
+      if (response.statusCode != 200) {
+        return [];
+      }
+      final decoded = json.decode(response.body);
+      if (decoded is List) {
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      return [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  /// Returns a map of 'YYYY-MM-DD' -> holiday name
+  Future<Map<String, String>> getHolidaysMap({int? year}) async {
+    final list = await getHolidays(year: year);
+    final map = <String, String>{};
+    for (final h in list) {
+      final dateVal = (h['holiday_date'] ?? h['date'])?.toString();
+      if (dateVal != null) {
+        final dStr = dateVal.split('T')[0];
+        map[dStr] = (h['holiday_name'] ?? h['name'] ?? 'Holiday').toString();
+      }
+    }
+    return map;
+  }
+
   Future<void> updateLeave(int id, String leaveType, DateTime startDate, DateTime endDate, String reason, {bool isHalfDay = false}) async {
     final url = '${AppConfig.leaveDetail}/$id';
     final DateFormat formatter = DateFormat('yyyy-MM-dd');

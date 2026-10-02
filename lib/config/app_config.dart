@@ -106,7 +106,7 @@ class AppConfig {
   // Settings endpoints
   static String get settingsPublic => '$apiBaseUrl/api/settings/public';
 
-  // Leave endpoints
+  // Leave & Holidays endpoints
   static String get leaveApply => '$apiBaseUrl/api/leave/apply';
   static String get leaveHistory => '$apiBaseUrl/api/leave/my-history';
   static String get leaveDetail => '$apiBaseUrl/api/leave'; // Append ID: $leaveDetail/{id}
@@ -114,6 +114,7 @@ class AppConfig {
   static String get leaveTypesForUser => '$apiBaseUrl/api/leavetypes/user/filtered';
   static String get leaveStats => '$apiBaseUrl/api/leave/my-stats';
   static String get userBalance => '$apiBaseUrl/api/leave/my-balance';
+  static String get holidays => '$apiBaseUrl/api/holidays';
   
   // On-duty endpoints
   static String get onDutyStart => '$apiBaseUrl/api/onduty/start';

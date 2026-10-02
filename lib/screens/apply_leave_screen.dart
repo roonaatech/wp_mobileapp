@@ -32,19 +32,20 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   Map<String, dynamic> _userLeaveBalance = {};
   int? _selectedLeaveBalance = 0;
   Map<DateTime, String> _existingLeavesStatus = {};
+  Map<DateTime, String> _holidaysMap = {};
   Set<DateTime> _attendedDates = {};
   bool _hasLoadedData = false;
   bool _isHalfDay = false;
   String? _todayAttendanceStatus;
 
-  // Calculate leave days excluding Sundays and any dates in excludeStatusMap (Approved/Pending)
+  // Calculate leave days excluding Sundays, company holidays, and any dates in excludeStatusMap (Approved/Pending)
   int _calculateLeaveDays(DateTime startDate, DateTime endDate, {Map<DateTime, String>? excludeStatusMap}) {
     if (startDate.isAfter(endDate)) return 0;
     int count = 0;
     DateTime current = startDate;
     while (!current.isAfter(endDate)) {
-      if (current.weekday != DateTime.sunday) {
-        final dateKey = DateTime(current.year, current.month, current.day);
+      final dateKey = DateTime(current.year, current.month, current.day);
+      if (current.weekday != DateTime.sunday && !_holidaysMap.containsKey(dateKey)) {
         if (excludeStatusMap == null || !excludeStatusMap.containsKey(dateKey)) {
           count++;
         }
@@ -62,7 +63,10 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     int workingDaysBack = 0;
     while (workingDaysBack < pastDaysAllowed) {
       cursor = cursor.subtract(const Duration(days: 1));
-      if (cursor.weekday != DateTime.sunday) workingDaysBack++;
+      final cursorKey = DateTime(cursor.year, cursor.month, cursor.day);
+      if (cursor.weekday != DateTime.sunday && !_holidaysMap.containsKey(cursorKey)) {
+        workingDaysBack++;
+      }
     }
     return cursor;
   }
@@ -88,16 +92,41 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
 
   // Method to load all data from database
   Future<void> _loadAllData() async {
-    print('[ApplyLeave] Fetching leave types, balance, existing leaves, and attended dates...');
+    print('[ApplyLeave] Fetching leave types, balance, existing leaves, holidays, and attended dates...');
     await Future.wait([
       _fetchLeaveTypes(),
       _fetchUserLeaveBalance(),
       _fetchMyLeaves(),
+      _fetchHolidays(),
       _fetchLeavePastDaysAllowed(),
       _fetchTodayAttendanceStatus(),
       _fetchAttendedDates(),
     ]);
-    print('[ApplyLeave] Data loaded. Leave types count: ${_leaveTypes.length}');
+    print('[ApplyLeave] Data loaded. Leave types count: ${_leaveTypes.length}, holidays count: ${_holidaysMap.length}');
+  }
+
+  Future<void> _fetchHolidays() async {
+    try {
+      final service = Provider.of<AttendanceService>(context, listen: false);
+      final map = await service.getHolidaysMap();
+      final Map<DateTime, String> dtMap = {};
+      map.forEach((k, v) {
+        try {
+          final p = k.split('-');
+          if (p.length == 3) {
+            dtMap[DateTime(int.parse(p[0]), int.parse(p[1]), int.parse(p[2]))] = v;
+          }
+        } catch (_) {}
+      });
+      if (mounted) {
+        setState(() {
+          _holidaysMap = dtMap;
+          _minLeaveDate = _computeMinLeaveDate(_leavePastDaysAllowed);
+        });
+      }
+    } catch (e) {
+      print('[ApplyLeave] Error fetching holidays: $e');
+    }
   }
 
   bool _hasTodayCheckIn = false;
@@ -459,13 +488,71 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Total: ${_calculateLeaveDays(_startDate!, _endDate!, excludeStatusMap: _existingLeavesStatus) - (_isHalfDay ? 0.5 : 0)} day(s) (Sundays excluded)',
+                                'Total: ${_calculateLeaveDays(_startDate!, _endDate!, excludeStatusMap: _existingLeavesStatus) - (_isHalfDay ? 0.5 : 0)} day(s) (Sundays & holidays excluded)',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Color(0xFF3B82F6),
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
+                              if (_startDate != null && _endDate != null) ...[
+                                if (_holidaysMap.containsKey(DateTime(_startDate!.year, _startDate!.month, _startDate!.day)) || _holidaysMap.containsKey(DateTime(_endDate!.year, _endDate!.month, _endDate!.day)))
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8.0),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFEEBEE),
+                                        border: Border.all(color: const Color(0xFFC1272D)),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.error_outline, color: Color(0xFFC1272D), size: 16),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              'Selected start/end date falls on a company holiday (${_holidaysMap[DateTime(_startDate!.year, _startDate!.month, _startDate!.day)] ?? _holidaysMap[DateTime(_endDate!.year, _endDate!.month, _endDate!.day)]}). Leave cannot start or end on a holiday.',
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Color(0xFFC1272D),
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                else if ((_calculateLeaveDays(_startDate!, _endDate!, excludeStatusMap: _existingLeavesStatus) - (_isHalfDay ? 0.5 : 0)) <= 0)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8.0),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFEEBEE),
+                                        border: Border.all(color: const Color(0xFFC1272D)),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Row(
+                                        children: [
+                                          Icon(Icons.error_outline, color: Color(0xFFC1272D), size: 16),
+                                          SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              'Selected leave period consists only of holidays and/or Sundays.',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Color(0xFFC1272D),
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
                               // Removed "Allowed: xx days" display
                               if (_selectedLeaveAllowedDays != null && (_calculateLeaveDays(_startDate!, _endDate!, excludeStatusMap: _existingLeavesStatus) - (_isHalfDay ? 0.5 : 0)) > _selectedLeaveAllowedDays! && !(_leaveType?.toLowerCase().contains('loss of pay') ?? false))
                                 Padding(
@@ -551,7 +638,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: (_isLoading || _isExceedingLimit() || (_startDate != null && _endDate != null && _findAttendedDateInRange(_startDate!, _endDate!) != null)) ? null : _submitLeave,
+                onPressed: (_isLoading || _isExceedingLimit() || _isHolidayRestricted() || (_startDate != null && _endDate != null && _findAttendedDateInRange(_startDate!, _endDate!) != null)) ? null : _submitLeave,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
@@ -622,6 +709,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                         final dayOnly = DateTime(day.year, day.month, day.day);
                         if (dayOnly.isBefore(minDate)) return false;
                         if (day.weekday == DateTime.sunday) return false;
+                        if (_holidaysMap.containsKey(dayOnly)) return false;
                         if (_attendedDates.contains(dayOnly)) {
                           return false; // Cannot apply leave on days with recorded attendance check-in
                         }
@@ -656,6 +744,27 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                         disabledBuilder: (context, day, focusedDay) {
                           final todayOnly = DateTime(ISTHelper.now().year, ISTHelper.now().month, ISTHelper.now().day);
                           final dayOnly = DateTime(day.year, day.month, day.day);
+                          if (_holidaysMap.containsKey(dayOnly)) {
+                            return Container(
+                              margin: const EdgeInsets.all(4),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF14B8A6).withOpacity(0.15),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xFF14B8A6).withOpacity(0.4),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Text(
+                                '${day.day}',
+                                style: const TextStyle(
+                                  color: Color(0xFF0F766E),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            );
+                          }
                           if (_attendedDates.contains(dayOnly) || (_hasCheckedInToday && dayOnly.isAtSameMomentAs(todayOnly))) {
                             return Container(
                               margin: const EdgeInsets.all(4),
@@ -729,6 +838,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                         _buildLegendItem('Approved', Colors.green.withOpacity(0.3)),
                         _buildLegendItem('Pending', Colors.orange.withOpacity(0.3)),
                         _buildLegendItem('Sunday', Colors.red.withOpacity(0.15)),
+                        _buildLegendItem('Holiday', const Color(0xFF14B8A6).withOpacity(0.3)),
                       ],
                     ),
                   ),
@@ -739,7 +849,28 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                       child: ElevatedButton(
                         onPressed: () {
                           if (tempStart != null) {
-                             Navigator.pop(ctx, DateTimeRange(start: tempStart!, end: tempEnd ?? tempStart!));
+                            final sOnly = DateTime(tempStart!.year, tempStart!.month, tempStart!.day);
+                            final eOnly = DateTime((tempEnd ?? tempStart!).year, (tempEnd ?? tempStart!).month, (tempEnd ?? tempStart!).day);
+                            if (_holidaysMap.containsKey(sOnly)) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Start date falls on a company holiday (${_holidaysMap[sOnly]}).')),
+                              );
+                              return;
+                            }
+                            if (_holidaysMap.containsKey(eOnly)) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('End date falls on a company holiday (${_holidaysMap[eOnly]}).')),
+                              );
+                              return;
+                            }
+                            final eff = _calculateLeaveDays(tempStart!, tempEnd ?? tempStart!, excludeStatusMap: _existingLeavesStatus) - (_isHalfDay ? 0.5 : 0);
+                            if (eff <= 0) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Selected leave period consists only of holidays and/or Sundays.')),
+                              );
+                              return;
+                            }
+                            Navigator.pop(ctx, DateTimeRange(start: tempStart!, end: tempEnd ?? tempStart!));
                           } else {
                             Navigator.pop(ctx);
                           }
@@ -796,10 +927,34 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     return selectedDays > _selectedLeaveAllowedDays!;
   }
 
+  bool _isHolidayRestricted() {
+    if (_startDate == null || _endDate == null) return false;
+    final s = DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
+    final e = DateTime(_endDate!.year, _endDate!.month, _endDate!.day);
+    if (_holidaysMap.containsKey(s) || _holidaysMap.containsKey(e)) return true;
+    final eff = _calculateLeaveDays(_startDate!, _endDate!, excludeStatusMap: _existingLeavesStatus) - (_isHalfDay ? 0.5 : 0);
+    return eff <= 0;
+  }
+
   Future<void> _submitLeave() async {
     if (!_formKey.currentState!.validate()) return;
     if (_startDate == null || _endDate == null) {
       showErrorDialog(context, 'Please select dates');
+      return;
+    }
+    final startOnly = DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
+    final endOnly = DateTime(_endDate!.year, _endDate!.month, _endDate!.day);
+    if (_holidaysMap.containsKey(startOnly)) {
+      showErrorDialog(context, 'Start date falls on a company holiday (${_holidaysMap[startOnly]}).');
+      return;
+    }
+    if (_holidaysMap.containsKey(endOnly)) {
+      showErrorDialog(context, 'End date falls on a company holiday (${_holidaysMap[endOnly]}).');
+      return;
+    }
+    final effectiveDays = _calculateLeaveDays(_startDate!, _endDate!, excludeStatusMap: _existingLeavesStatus) - (_isHalfDay ? 0.5 : 0);
+    if (effectiveDays <= 0) {
+      showErrorDialog(context, 'Selected leave period consists only of holidays and/or Sundays.');
       return;
     }
     final attended = _findAttendedDateInRange(_startDate!, _endDate!);

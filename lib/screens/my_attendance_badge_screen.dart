@@ -455,6 +455,8 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
         final checkInTime = response['checkInTime'] ?? badge['checkInTime'];
         final checkOutTime = response['checkOutTime'] ?? badge['checkOutTime'];
         final checkInIso = response['checkInIso'] ?? badge['checkInIso'];
+        final bool isHoliday = response['isHoliday'] == true || badge['isHoliday'] == true || todayStatus == 'HOLIDAY';
+        final String? holidayName = response['holidayName']?.toString() ?? badge['holidayName']?.toString();
 
         final badgeData = <String, dynamic>{
           'staffId': emp['staffId'] ?? badge['staffId'] ?? response['staffId'],
@@ -467,6 +469,8 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
           'checkInTime': checkInTime,
           'checkOutTime': checkOutTime,
           'checkInIso': checkInIso,
+          'isHoliday': isHoliday,
+          'holidayName': holidayName,
           'qrPayload': qr,
           'expiresAt': response['expiresAt'] ?? badge['expiresAt'],
           'ttlSeconds': ttl,
@@ -499,7 +503,12 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
           _errorMessage = null;
         });
 
-        if (isWfh) {
+        if (isHoliday) {
+          // On holiday, cancel timers
+          _countdownTimer?.cancel();
+          _rotationTimer?.cancel();
+          _elapsedTimer?.cancel();
+        } else if (isWfh) {
           // On WFH days, disable QR countdown timer
           _countdownTimer?.cancel();
           // Automatically capture GPS location
@@ -557,6 +566,8 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
 
   Color _getStatusColor(String? status) {
     switch (status) {
+      case 'HOLIDAY':
+        return const Color(0xFF14B8A6);
       case 'CHECKED_IN':
         return const Color(0xFF10B981);
       case 'COMPLETED':
@@ -569,8 +580,10 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
     }
   }
 
-  String _getStatusText(String? status, String? checkInTime, String? checkOutTime) {
+  String _getStatusText(String? status, String? checkInTime, String? checkOutTime, {String? holidayName}) {
     switch (status) {
+      case 'HOLIDAY':
+        return holidayName != null ? 'Company Holiday: $holidayName' : 'Company Holiday';
       case 'CHECKED_IN':
         return checkInTime != null
             ? 'Checked In: $checkInTime'
@@ -597,6 +610,8 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
     final todayStatus = _badgeData?['todayStatus']?.toString() ?? 'NOT_CHECKED_IN';
     final checkInTime = _badgeData?['checkInTime']?.toString();
     final checkOutTime = _badgeData?['checkOutTime']?.toString();
+    final bool isHoliday = _badgeData?['isHoliday'] == true || todayStatus == 'HOLIDAY';
+    final String holidayName = _badgeData?['holidayName']?.toString() ?? 'Company Holiday';
 
     final statusColor = _getStatusColor(todayStatus);
     final bool isViewingWfh = _isWfhDay;
@@ -856,7 +871,7 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  _getStatusText(todayStatus, checkInTime, checkOutTime),
+                                  _getStatusText(todayStatus, checkInTime, checkOutTime, holidayName: holidayName),
                                   style: TextStyle(
                                     color: statusColor,
                                     fontSize: 12,
@@ -1063,6 +1078,41 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                                   ],
                                 ),
                               )
+                            else if (todayStatus == 'HOLIDAY' || isHoliday)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF14B8A6).withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.4)),
+                                ),
+                                child: Column(
+                                  children: [
+                                    const Icon(Icons.celebration_rounded, color: Color(0xFF2DD4BF), size: 36),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      'Company Holiday: $holidayName',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    const Text(
+                                      'Attendance check-in is not permitted or required on company holidays. Enjoy your day off!',
+                                      style: TextStyle(
+                                        color: Color(0xFF94A3B8),
+                                        fontSize: 12,
+                                        height: 1.3,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              )
                             else
                               Container(
                                 width: double.infinity,
@@ -1105,6 +1155,43 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                                   ),
                                 ),
                               ],
+                            ),
+                          ] else if (isHoliday) ...[
+                            // ─── OFFICE HOLIDAY NOTICE VIEW ───
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 18),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF14B8A6).withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.35)),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.celebration_rounded, color: Color(0xFF2DD4BF), size: 48),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Office Closed for $holidayName',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Today is an official company holiday. Office attendance and badge scanning are disabled.',
+                                    style: TextStyle(
+                                      color: Color(0xFF94A3B8),
+                                      fontSize: 12,
+                                      height: 1.4,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
                             ),
                           ] else ...[
                             // ─── OFFICE DYNAMIC QR CODE VIEW (OFFICE DAYS ONLY) ───
