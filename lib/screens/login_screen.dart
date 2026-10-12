@@ -1519,7 +1519,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                           }
                                         },
                                         child: const Text(
-                                          'Forgot password?',
+                                          'Forgot Password?',
                                           style: TextStyle(
                                             fontFamily: 'Poppins',
                                             fontSize: 12.5,
@@ -1719,13 +1719,16 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: Color(0xFF059669),
                           ),
                           SizedBox(width: 5),
-                          Text(
-                            '256-Bit Encrypted • Aayi Technologies Pvt Ltd',
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              fontSize: 10.5,
-                              color: Color(0xFF64748B),
-                              fontWeight: FontWeight.w500,
+                          Flexible(
+                            child: Text(
+                              '256-Bit Encrypted • Aayi Technologies Pvt Ltd',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 10.5,
+                                color: Color(0xFF64748B),
+                                fontWeight: FontWeight.w500,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],

@@ -126,11 +126,10 @@ class AppConfig {
   static String get timeOffApply => '$apiBaseUrl/api/timeoff/apply';
   static String get timeOffDetail => '$apiBaseUrl/api/timeoff'; // Append ID: $timeOffDetail/{id}
 
-  // Face Attendance endpoints
+  // Attendance & Kiosk Terminal endpoints
   static String get attendanceStatus => '$apiBaseUrl/api/attendance/status';
-  static String get faceStatus => '$apiBaseUrl/api/attendance/face-status';
-  static String get checkInOutWithFace => '$apiBaseUrl/api/attendance/check-in-out-with-face';
-  static String get identifyFace => '$apiBaseUrl/api/attendance/identify-face';
+  static String get terminalStatus => '$apiBaseUrl/api/attendance/terminal-status';
+  static String get faceStatus => '$apiBaseUrl/api/attendance/terminal-status'; // Backward-compat alias
   static String get attendanceStaffList => '$apiBaseUrl/api/attendance/staff-list';
   static String get attendanceKioskRecord => '$apiBaseUrl/api/attendance/kiosk-record';
   static String get myAttendanceBadge => '$apiBaseUrl/api/attendance/my-badge';
@@ -140,7 +139,7 @@ class AppConfig {
   static String get todayAttendance => '$apiBaseUrl/api/attendance/today';
   static String get myAttendedDates => '$apiBaseUrl/api/attendance/my-attended-dates';
 
-  /// Base URL for the Face Attendance web portal (kiosk/scanner)
+  /// Base URL for the Attendance web portal (kiosk/scanner)
   static String get attendancePortalUrl {
     const String customUrl = String.fromEnvironment('PORTAL_URL');
     if (customUrl.isNotEmpty) {

@@ -238,9 +238,9 @@ class AuthService with ChangeNotifier {
 
     notifyListeners();
 
-    // Refresh face attendance permission in background
+    // Refresh attendance terminal permission in background
     if (_token != null) {
-      refreshFaceAttendancePermission();
+      refreshAttendanceTerminalPermission();
     }
 
     // Refresh settings using the token just in case public fetch failed or migration not run
@@ -357,7 +357,7 @@ class AuthService with ChangeNotifier {
 
       // Helper to check if role/gender is invalid
       // Role: null or 0 means invalid
-      // Gender: null or empty string means invalid (not required for face attendance portal users)
+      // Gender: null or empty string means invalid (not required for attendance portal users)
       final isRoleInvalid = role == null || role == 0 || role == '0';
       final isGenderInvalid = (gender == null || gender == '') && !canAccessAttendance;
 
@@ -493,13 +493,13 @@ class AuthService with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Check and refresh Face Attendance permission from backend
-  Future<bool> refreshFaceAttendancePermission() async {
+  /// Check and refresh Attendance Terminal permission from backend
+  Future<bool> refreshAttendanceTerminalPermission() async {
     if (_token == null) return false;
     try {
       final client = _createHttpClient();
       final response = await client.get(
-        Uri.parse(AppConfig.faceStatus),
+        Uri.parse(AppConfig.terminalStatus),
         headers: {
           'Content-Type': 'application/json',
           'x-access-token': _token!,
@@ -525,10 +525,13 @@ class AuthService with ChangeNotifier {
         return allowed;
       }
     } catch (e) {
-      print('Error refreshing face attendance permission: $e');
+      print('Error refreshing attendance terminal permission: $e');
     }
     return _canAccessAttendancePortal;
   }
+
+  /// Backward compatibility alias
+  Future<bool> refreshFaceAttendancePermission() => refreshAttendanceTerminalPermission();
 
   void setMustChangePassword(bool value) async {
     _mustChangePassword = value;

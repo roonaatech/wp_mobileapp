@@ -8,7 +8,7 @@ import '../utils/ist_helper.dart';
 import 'apply_leave_screen.dart';
 import 'apply_timeoff_screen.dart';
 import 'on_duty_screen.dart';
-import 'face_attendance_screen.dart';
+import 'kiosk_attendance_screen.dart';
 import 'my_attendance_badge_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -89,7 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (canAccessAttendance) {
       return Scaffold(
-        body: const FaceAttendanceScreen(),
+        body: const KioskAttendanceScreen(),
         bottomNavigationBar: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(

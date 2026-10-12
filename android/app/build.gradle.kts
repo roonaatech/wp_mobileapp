@@ -69,8 +69,7 @@ android {
 
     packaging {
         jniLibs {
-            // Face recognition runs TFLite on the CPU; tflite_flutter only loads the
-            // GPU delegate library when a GpuDelegate is created, which the app never does.
+            // Exclude unused GPU delegate library
             excludes += "**/libtensorflowlite_gpu_jni.so"
         }
     }

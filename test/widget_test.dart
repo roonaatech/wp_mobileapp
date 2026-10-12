@@ -34,11 +34,11 @@ void main() {
     // Verify brand and form elements are present
     expect(find.text('WorkPulse'), findsOneWidget);
     expect(find.text('MANAGEMENT'), findsOneWidget);
-    expect(find.text('Sign In'), findsOneWidget);
+    expect(find.text('SIGN IN TO WORKPULSE'), findsOneWidget);
     expect(find.byType(TextFormField), findsNWidgets(2));
 
     // Verify Remember Me checkbox and Forgot Password button
-    expect(find.text('Remember Me'), findsOneWidget);
+    expect(find.text('Remember me'), findsOneWidget);
     expect(find.text('Forgot Password?'), findsOneWidget);
   });
 
@@ -77,7 +77,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final mockAuth = MockAuthService(canAccessFace: false);
+    final mockAuth = MockAuthService(canAccessTerminal: false);
 
     await tester.pumpWidget(
       MultiProvider(
@@ -98,17 +98,17 @@ void main() {
     expect(find.text('Leave'), findsOneWidget);
     expect(find.text('Time-Off'), findsOneWidget);
     expect(find.text('On-Duty'), findsOneWidget);
-    // Attendance tab should NOT exist
-    expect(find.text('Attendance'), findsNothing);
+    // QR Terminal tab should NOT exist
+    expect(find.text('QR Terminal'), findsNothing);
   });
 
-  testWidgets('HomeScreen displays only Attendance option when canAccessAttendancePortal is true', (WidgetTester tester) async {
+  testWidgets('HomeScreen displays only QR Terminal option when canAccessAttendancePortal is true', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 1920);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final mockAuth = MockAuthService(canAccessFace: true);
+    final mockAuth = MockAuthService(canAccessTerminal: true);
 
     await tester.pumpWidget(
       MultiProvider(
@@ -124,8 +124,8 @@ void main() {
 
     await tester.pump();
 
-    // Verify only Attendance exists and standard employee tabs do NOT exist
-    expect(find.text('Attendance'), findsOneWidget);
+    // Verify only QR Terminal exists and standard employee tabs do NOT exist
+    expect(find.text('QR Terminal'), findsOneWidget);
     expect(find.text('Home'), findsNothing);
     expect(find.text('Leave'), findsNothing);
     expect(find.text('Time-Off'), findsNothing);
@@ -134,11 +134,11 @@ void main() {
 }
 
 class MockAuthService extends ChangeNotifier implements AuthService {
-  final bool _canAccessFace;
-  MockAuthService({bool canAccessFace = false}) : _canAccessFace = canAccessFace;
+  final bool _canAccessTerminal;
+  MockAuthService({bool canAccessTerminal = false}) : _canAccessTerminal = canAccessTerminal;
 
   @override
-  bool get canAccessAttendancePortal => _canAccessFace;
+  bool get canAccessAttendancePortal => _canAccessTerminal;
 
   @override
   String? get token => 'mock-token';
@@ -166,6 +166,9 @@ class MockAuthService extends ChangeNotifier implements AuthService {
 
   @override
   bool get isServiceAccount => false;
+
+  @override
+  bool get isWfhToday => false;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

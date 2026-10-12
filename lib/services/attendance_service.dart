@@ -725,12 +725,12 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
-  /// Fetch face registration status for the currently authenticated user
-  Future<Map<String, dynamic>> getFaceStatus() async {
+  /// Fetch kiosk terminal status for the currently authenticated user
+  Future<Map<String, dynamic>> getTerminalStatus() async {
     if (token == null) {
       throw Exception('Not authenticated');
     }
-    final url = AppConfig.faceStatus;
+    final url = AppConfig.terminalStatus;
     try {
       final response = await _client.get(
         Uri.parse(url),
@@ -741,13 +741,16 @@ class AttendanceService with ChangeNotifier {
       );
 
       if (response.statusCode != 200) {
-        throw Exception('Failed to fetch face status: ${response.statusCode}');
+        throw Exception('Failed to fetch terminal status: ${response.statusCode}');
       }
       return json.decode(response.body);
     } catch (error) {
       rethrow;
     }
   }
+
+  /// Backward compatibility alias
+  Future<Map<String, dynamic>> getFaceStatus() => getTerminalStatus();
 
   /// Fetch list of all active staff members for the attendance kiosk terminal
   Future<List<Map<String, dynamic>>> getStaffList() async {
@@ -817,100 +820,6 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
-  /// Identify an employee from a face snapshot image or 128-d face descriptor.
-  /// Returns `{matched, email, employeeName, distance}`.
-  Future<Map<String, dynamic>> identifyFace({
-    List<double>? faceDescriptor,
-    String? snapshotImage,
-  }) async {
-    if (token == null) {
-      throw Exception('Not authenticated');
-    }
-    final bodyMap = <String, dynamic>{};
-    if (faceDescriptor != null) bodyMap['faceDescriptor'] = faceDescriptor;
-    if (snapshotImage != null) bodyMap['snapshotImage'] = snapshotImage;
-
-    final response = await _client
-        .post(
-          Uri.parse(AppConfig.identifyFace),
-          headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': token!,
-          },
-          body: json.encode(bodyMap),
-        )
-        .timeout(const Duration(seconds: 20));
-
-    final responseBody = _decodeJsonObject(response.body);
-    if (response.statusCode != 200) {
-      throw Exception(responseBody['message'] ?? 'Face identification failed (${response.statusCode})');
-    }
-    return responseBody;
-  }
-
-  /// Record a check-in / check-out that the backend verifies against the
-  /// employee's registered Face ID (front, left and right profiles), as the web
-  /// portal does. Pass [livenessVerified] after the head-turn check, or a
-  /// [password] for the manual fallback.
-  Future<Map<String, dynamic>> checkInOutWithFace({
-    required String email,
-    required String action,
-    List<double>? faceDescriptor,
-    List<double>? faceDescriptorLeft,
-    List<double>? faceDescriptorRight,
-    String? snapshotImage,
-    String? imageLeft,
-    String? imageRight,
-    String? password,
-    bool livenessVerified = false,
-    double? latitude,
-    double? longitude,
-    String? phoneModel,
-  }) async {
-    if (token == null) {
-      throw Exception('Not authenticated');
-    }
-    final deviceId = await DeviceHelper.getDeviceId();
-    final deviceName = await DeviceHelper.getDeviceName();
-
-    final response = await _client
-        .post(
-          Uri.parse(AppConfig.checkInOutWithFace),
-          headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': token!,
-            'x-is-mobile': 'true',
-            'x-is-mobile-app': 'true',
-            'x-device-id': deviceId,
-            'x-device-name': deviceName,
-          },
-          body: json.encode({
-            'email': email,
-            'action': action,
-            'deviceId': deviceId,
-            'deviceName': deviceName,
-            if (faceDescriptor != null) 'faceDescriptor': faceDescriptor,
-            if (faceDescriptorLeft != null) 'faceDescriptorLeft': faceDescriptorLeft,
-            if (faceDescriptorRight != null) 'faceDescriptorRight': faceDescriptorRight,
-            if (snapshotImage != null) 'snapshotImage': snapshotImage,
-            if (imageLeft != null) 'imageLeft': imageLeft,
-            if (imageRight != null) 'imageRight': imageRight,
-            if (password != null) 'password': password,
-            if (livenessVerified) 'livenessVerified': true,
-            'latitude': latitude?.toString(),
-            'longitude': longitude?.toString(),
-            'phone_model': phoneModel ?? deviceName,
-          }),
-        )
-        .timeout(const Duration(seconds: 30));
-
-    final responseBody = _decodeJsonObject(response.body);
-    if (response.statusCode != 200) {
-      throw Exception(responseBody['message'] ?? 'Failed to record attendance (${response.statusCode})');
-    }
-    notifyListeners();
-    return responseBody;
-  }
 
   /// Fetch dynamic signed QR badge data for the logged-in employee
   Future<Map<String, dynamic>> getMyAttendanceBadge() async {
