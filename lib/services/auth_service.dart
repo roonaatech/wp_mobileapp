@@ -253,6 +253,7 @@ class AuthService with ChangeNotifier {
           settings['application_time_format']!,
         );
         await prefs.setString('leave_past_days_allowed', settings['leave_past_days_allowed'] ?? '0');
+        await prefs.setString('time_off_past_days_allowed', settings['time_off_past_days_allowed'] ?? '0');
         await prefs.setString('office_start_time', settings['office_start_time'] ?? '09:30');
         await prefs.setString('office_end_time', settings['office_end_time'] ?? '18:30');
       }
@@ -425,6 +426,7 @@ class AuthService with ChangeNotifier {
             settings['application_time_format']!,
           );
           await prefs.setString('leave_past_days_allowed', settings['leave_past_days_allowed'] ?? '0');
+          await prefs.setString('time_off_past_days_allowed', settings['time_off_past_days_allowed'] ?? '0');
           await prefs.setString('office_start_time', settings['office_start_time'] ?? '09:30');
           await prefs.setString('office_end_time', settings['office_end_time'] ?? '18:30');
         }
@@ -604,6 +606,7 @@ class AuthService with ChangeNotifier {
             'application_date_format': data['map']['application_date_format']?.toString() ?? 'MMM DD, YYYY',
             'application_time_format': data['map']['application_time_format']?.toString() ?? '12h',
             'leave_past_days_allowed': data['map']['leave_past_days_allowed']?.toString() ?? '0',
+            'time_off_past_days_allowed': data['map']['time_off_past_days_allowed']?.toString() ?? '0',
             'office_start_time': data['map']['office_start_time']?.toString() ?? '09:30',
             'office_end_time': data['map']['office_end_time']?.toString() ?? '18:30',
           };

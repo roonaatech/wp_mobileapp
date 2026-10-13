@@ -28,13 +28,67 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
   TimeOfDay _officeEndTime = const TimeOfDay(hour: 18, minute: 30);
   String? _todayAttendanceStatus;
   Map<DateTime, String> _holidaysMap = {};
+  int _timeOffPastDaysAllowed = 0;
+  DateTime _minTimeOffDate = DateTime.now();
+
+  DateTime _computeMinTimeOffDate(int pastDaysAllowed) {
+    final today = ISTHelper.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    if (pastDaysAllowed <= 0) return todayOnly;
+    DateTime cursor = todayOnly;
+    int workingDaysBack = 0;
+    while (workingDaysBack < pastDaysAllowed) {
+      cursor = cursor.subtract(const Duration(days: 1));
+      final cursorKey = DateTime(cursor.year, cursor.month, cursor.day);
+      if (cursor.weekday != DateTime.sunday && !_holidaysMap.containsKey(cursorKey)) {
+        workingDaysBack++;
+      }
+    }
+    return cursor;
+  }
+
+  Future<void> _fetchTimeOffPastDaysAllowed() async {
+    try {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final settings = await AuthService.fetchGlobalSettings(token: authService.token);
+      int val = 0;
+      if (settings != null) {
+        val = int.tryParse(settings['time_off_past_days_allowed'] ?? '0') ?? 0;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('time_off_past_days_allowed', val.toString());
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        val = int.tryParse(prefs.getString('time_off_past_days_allowed') ?? '0') ?? 0;
+      }
+      if (mounted) {
+        setState(() {
+          _timeOffPastDaysAllowed = val;
+          _minTimeOffDate = _computeMinTimeOffDate(val);
+        });
+      }
+    } catch (e) {
+      print('Failed to load time_off_past_days_allowed: $e');
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final val = int.tryParse(prefs.getString('time_off_past_days_allowed') ?? '0') ?? 0;
+        if (mounted) {
+          setState(() {
+            _timeOffPastDaysAllowed = val;
+            _minTimeOffDate = _computeMinTimeOffDate(val);
+          });
+        }
+      } catch (_) {}
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    _minTimeOffDate = _computeMinTimeOffDate(0);
     _loadOfficeHours();
     _checkTodayAttendanceStatus();
     _fetchHolidays();
+    _fetchTimeOffPastDaysAllowed();
     if (widget.existingRequest != null) {
       _initializeForEdit();
     } else {
@@ -62,6 +116,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
       if (mounted) {
         setState(() {
           _holidaysMap = dtMap;
+          _minTimeOffDate = _computeMinTimeOffDate(_timeOffPastDaysAllowed);
         });
       }
     } catch (e) {
@@ -167,6 +222,9 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
   Future<void> _selectDate() async {
     final DateTime now = ISTHelper.now();
     DateTime initialDate = _selectedDate ?? now;
+    if (initialDate.isBefore(_minTimeOffDate)) {
+      initialDate = _minTimeOffDate;
+    }
     
     // Advance initialDate if it falls on Sunday or a company holiday
     while (initialDate.weekday == DateTime.sunday || _holidaysMap.containsKey(DateTime(initialDate.year, initialDate.month, initialDate.day))) {
@@ -176,7 +234,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: initialDate,
-      firstDate: now,
+      firstDate: _minTimeOffDate,
       lastDate: now.add(const Duration(days: 90)),
       selectableDayPredicate: (DateTime day) {
         final d = DateTime(day.year, day.month, day.day);
@@ -379,6 +437,13 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
         context,
         'End time (${_formatTime(_endTime)}) must be within configured office hours (${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)}). Requests outside office hours are not allowed.',
       );
+      return;
+    }
+
+    final selDateOnly = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day);
+    final minDateOnly = DateTime(_minTimeOffDate.year, _minTimeOffDate.month, _minTimeOffDate.day);
+    if (selDateOnly.isBefore(minDateOnly)) {
+      showErrorDialog(context, 'Time-off cannot be requested for dates more than $_timeOffPastDaysAllowed working day(s) in the past.');
       return;
     }
 
