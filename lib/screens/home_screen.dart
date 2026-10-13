@@ -28,7 +28,9 @@ class _HomeScreenState extends State<HomeScreen> {
       // If tapping Home while on Home, refresh
       _dashboardKey.currentState?._loadLeaves();
     } else {
-      if (index == 3) {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final int timeOffIndex = authService.isAttendanceModuleEnabled ? 3 : 2;
+      if (index == timeOffIndex) {
         // Reset Time-Off screen when navigating to it
         _timeOffKey = UniqueKey();
       }
@@ -85,9 +87,69 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
     final bool canAccessAttendance = authService.canAccessAttendancePortal;
+    final bool attendanceEnabled = authService.isAttendanceModuleEnabled;
     final bool isWfhDay = authService.isWfhToday;
 
     if (canAccessAttendance) {
+      if (!attendanceEnabled) {
+        return Scaffold(
+          backgroundColor: const Color(0xFF0F172A),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.lock_clock_rounded,
+                      color: Colors.amber,
+                      size: 40,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Attendance Module Disabled',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'The Attendance & Terminal module is currently disabled by your organization administrator in General Settings.',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 14,
+                      color: Colors.grey.shade400,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 28),
+                  OutlinedButton.icon(
+                    onPressed: () => authService.logout(),
+                    icon: const Icon(Icons.logout, color: Colors.white70),
+                    label: const Text('Sign Out', style: TextStyle(color: Colors.white70)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.grey.shade700),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+
       return Scaffold(
         body: const KioskAttendanceScreen(),
         bottomNavigationBar: Container(
@@ -117,7 +179,15 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    if (_currentIndex >= 5) {
+    final List<Widget> screens = [
+      LeaveDashboard(key: _dashboardKey),
+      if (attendanceEnabled) MyAttendanceBadgeScreen(onBackToHome: _goToHomeAndRefresh),
+      ApplyLeaveScreen(onSuccess: _goToHomeAndRefresh),
+      ApplyTimeOffScreen(key: _timeOffKey, onSuccess: _goToHomeAndRefresh),
+      OnDutyScreen(onVisitEnded: _goToHomeAndRefresh),
+    ];
+
+    if (_currentIndex >= screens.length) {
       _currentIndex = 0;
     }
 
@@ -132,13 +202,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Scaffold(
         body: IndexedStack(
           index: _currentIndex,
-          children: [
-            LeaveDashboard(key: _dashboardKey),
-            MyAttendanceBadgeScreen(onBackToHome: _goToHomeAndRefresh),
-            ApplyLeaveScreen(onSuccess: _goToHomeAndRefresh),
-            ApplyTimeOffScreen(key: _timeOffKey, onSuccess: _goToHomeAndRefresh),
-            OnDutyScreen(onVisitEnded: _goToHomeAndRefresh),
-          ],
+          children: screens,
         ),
         bottomNavigationBar: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -161,25 +225,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: 'Home', 
                 index: 0,
               ),
-              _buildNavItem(
-                icon: isWfhDay ? Icons.home_work_rounded : Icons.qr_code_2_rounded, 
-                label: isWfhDay ? 'WFH Punch' : 'Badge', 
-                index: 1,
-              ),
+              if (attendanceEnabled)
+                _buildNavItem(
+                  icon: isWfhDay ? Icons.home_work_rounded : Icons.qr_code_2_rounded, 
+                  label: isWfhDay ? 'WFH Punch' : 'Badge', 
+                  index: 1,
+                ),
               _buildNavItem(
                 icon: Icons.calendar_month_outlined, 
                 label: 'Leave', 
-                index: 2,
+                index: attendanceEnabled ? 2 : 1,
               ),
               _buildNavItem(
                 icon: Icons.access_time, 
                 label: 'Time-Off', 
-                index: 3,
+                index: attendanceEnabled ? 3 : 2,
               ),
               _buildNavItem(
                 icon: Icons.business_center_outlined, 
                 label: 'On-Duty', 
-                index: 4,
+                index: attendanceEnabled ? 4 : 3,
               ),
             ],
           ),
@@ -1217,20 +1282,21 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                   ),
                   Row(
                     children: [
-                      IconButton(
-                        icon: Icon(isWfhDay ? Icons.home_work_rounded : Icons.qr_code_2_rounded, color: Colors.white),
-                        tooltip: isWfhDay ? 'WFH Attendance Punch' : 'My Smart Badge',
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => MyAttendanceBadgeScreen(
-                                onBackToHome: () => Navigator.of(context).pop(),
+                      if (authService.isAttendanceModuleEnabled)
+                        IconButton(
+                          icon: Icon(isWfhDay ? Icons.home_work_rounded : Icons.qr_code_2_rounded, color: Colors.white),
+                          tooltip: isWfhDay ? 'WFH Attendance Punch' : 'My Smart Badge',
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => MyAttendanceBadgeScreen(
+                                  onBackToHome: () => Navigator.of(context).pop(),
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
+                            );
+                          },
+                        ),
                       // Settings Menu (only show if WorkPulse-only user)
                       if (authService.isWorkPulseOnlyUser)
                         PopupMenuButton<String>(
@@ -1266,8 +1332,9 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
         ),
 
         // Smart Badge / WFH Punch Quick Action Banner
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        if (authService.isAttendanceModuleEnabled)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: InkWell(
             onTap: () {
               Navigator.push(

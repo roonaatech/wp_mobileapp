@@ -80,12 +80,15 @@ class AuthService with ChangeNotifier {
   bool _mustChangePassword = false;
   String? _currentPassword;
   bool _canAccessAttendancePortal = false;
+  bool _isAttendanceModuleEnabled = true;
   bool _isServiceAccount = false;
   String? _workMode;
   List<String> _hybridOfficeDays = [];
 
   String get workMode => _workMode ?? 'Office';
   List<String> get hybridOfficeDays => List.unmodifiable(_hybridOfficeDays);
+
+  bool get isAttendanceModuleEnabled => _isAttendanceModuleEnabled;
 
   bool get isWfhToday {
     final mode = (_workMode ?? 'Office').trim().toLowerCase();
@@ -235,6 +238,7 @@ class AuthService with ChangeNotifier {
     }
 
     _userId = prefs.getString('userId');
+    _isAttendanceModuleEnabled = (prefs.getString('module_attendance_enabled') ?? 'true') != 'false';
 
     notifyListeners();
 
@@ -256,6 +260,10 @@ class AuthService with ChangeNotifier {
         await prefs.setString('time_off_past_days_allowed', settings['time_off_past_days_allowed'] ?? '0');
         await prefs.setString('office_start_time', settings['office_start_time'] ?? '09:30');
         await prefs.setString('office_end_time', settings['office_end_time'] ?? '18:30');
+        final attEnabledStr = settings['module_attendance_enabled'] ?? 'true';
+        _isAttendanceModuleEnabled = attEnabledStr != 'false';
+        await prefs.setString('module_attendance_enabled', attEnabledStr);
+        notifyListeners();
       }
     } catch (e) {
       print('Error refreshing settings during auto-login: $e');
@@ -429,6 +437,9 @@ class AuthService with ChangeNotifier {
           await prefs.setString('time_off_past_days_allowed', settings['time_off_past_days_allowed'] ?? '0');
           await prefs.setString('office_start_time', settings['office_start_time'] ?? '09:30');
           await prefs.setString('office_end_time', settings['office_end_time'] ?? '18:30');
+          final attEnabledStr = settings['module_attendance_enabled'] ?? 'true';
+          _isAttendanceModuleEnabled = attEnabledStr != 'false';
+          await prefs.setString('module_attendance_enabled', attEnabledStr);
         }
       } catch (e) {
         print('Error fetching settings during login: $e');
@@ -610,6 +621,7 @@ class AuthService with ChangeNotifier {
             'time_off_past_days_allowed': data['map']['time_off_past_days_allowed']?.toString() ?? '0',
             'office_start_time': data['map']['office_start_time']?.toString() ?? '09:30',
             'office_end_time': data['map']['office_end_time']?.toString() ?? '18:30',
+            'module_attendance_enabled': data['map']['module_attendance_enabled']?.toString() ?? 'true',
           };
         }
       }
@@ -617,5 +629,24 @@ class AuthService with ChangeNotifier {
       print('Error fetching global settings (authenticated: ${token != null}): $error');
     }
     return null; 
+  }
+
+  /// Manually refresh global settings from backend
+  Future<void> refreshGlobalSettings() async {
+    try {
+      final settings = await fetchGlobalSettings(token: _token);
+      if (settings != null) {
+        final attEnabledStr = settings['module_attendance_enabled'] ?? 'true';
+        final bool isEnabled = attEnabledStr != 'false';
+        if (_isAttendanceModuleEnabled != isEnabled) {
+          _isAttendanceModuleEnabled = isEnabled;
+          notifyListeners();
+        }
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('module_attendance_enabled', attEnabledStr);
+      }
+    } catch (e) {
+      print('Error refreshing global settings: $e');
+    }
   }
 }

@@ -86,7 +86,10 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     super.initState();
     _minTimeOffDate = _computeMinTimeOffDate(0);
     _loadOfficeHours();
-    _checkTodayAttendanceStatus();
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (authService.isAttendanceModuleEnabled) {
+      _checkTodayAttendanceStatus();
+    }
     _fetchHolidays();
     _fetchTimeOffPastDaysAllowed();
     if (widget.existingRequest != null) {
@@ -311,6 +314,8 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
   }
 
   bool get _isCurrentlyCheckedInToday {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (!authService.isAttendanceModuleEnabled) return false;
     return _isSelectedDateToday && (_isCurrentlyCheckedIn || _todayAttendanceStatus == 'CHECKED_IN');
   }
 

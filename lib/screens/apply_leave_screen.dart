@@ -93,14 +93,16 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   // Method to load all data from database
   Future<void> _loadAllData() async {
     print('[ApplyLeave] Fetching leave types, balance, existing leaves, holidays, and attended dates...');
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final attendanceEnabled = authService.isAttendanceModuleEnabled;
     await Future.wait([
       _fetchLeaveTypes(),
       _fetchUserLeaveBalance(),
       _fetchMyLeaves(),
       _fetchHolidays(),
       _fetchLeavePastDaysAllowed(),
-      _fetchTodayAttendanceStatus(),
-      _fetchAttendedDates(),
+      if (attendanceEnabled) _fetchTodayAttendanceStatus(),
+      if (attendanceEnabled) _fetchAttendedDates(),
     ]);
     print('[ApplyLeave] Data loaded. Leave types count: ${_leaveTypes.length}, holidays count: ${_holidaysMap.length}');
   }
@@ -186,6 +188,8 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   }
 
   bool get _hasCheckedInToday {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (!authService.isAttendanceModuleEnabled) return false;
     return _hasTodayCheckIn || _todayAttendanceStatus == 'CHECKED_IN' || _todayAttendanceStatus == 'COMPLETED' || _todayAttendanceStatus == 'CHECKED_OUT';
   }
 

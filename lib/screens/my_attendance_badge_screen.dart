@@ -412,6 +412,16 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
   }
 
   Future<void> _fetchBadge({bool silent = false}) async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (!authService.isAttendanceModuleEnabled) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
     if (_isFetching && silent) return;
     _isFetching = true;
 
@@ -603,6 +613,84 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
+    if (!authService.isAttendanceModuleEnabled) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+            onPressed: () {
+              if (Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              } else if (widget.onBackToHome != null) {
+                widget.onBackToHome!();
+              }
+            },
+          ),
+          title: const Text('Attendance', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          centerTitle: true,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.block_rounded, size: 64, color: Color(0xFFEF4444)),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Attendance Module Disabled',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'The Attendance module has been disabled by your organization administrator in General Settings.',
+                  style: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    if (Navigator.of(context).canPop()) {
+                      Navigator.of(context).pop();
+                    } else if (widget.onBackToHome != null) {
+                      widget.onBackToHome!();
+                    }
+                  },
+                  icon: const Icon(Icons.home_rounded),
+                  label: const Text('Return to Home'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3B82F6),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final employeeName = _badgeData?['name']?.toString() ?? authService.userName ?? 'Employee';
     final employeeEmail = _badgeData?['email']?.toString() ?? authService.userEmail ?? '';
     final employeeCode = _badgeData?['staffId'] != null ? 'EMP-${_badgeData!['staffId']}' : 'WP-BADGE';
