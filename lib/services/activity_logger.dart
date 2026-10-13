@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
+import '../utils/http_client.dart';
 
 class ActivityLogger {
   static Future<void> logLogin(String userName) async {
@@ -60,8 +60,9 @@ class ActivityLogger {
         return;
       }
 
-      await http.post(
-        Uri.parse('${AppConfig.getBaseUrl()}/api/activities'),
+      final client = HttpClientFactory.createClient(allowSelfSigned: true);
+      await client.post(
+        Uri.parse('${AppConfig.apiBaseUrl}/api/activities'),
         headers: {
           'Content-Type': 'application/json',
           'x-access-token': token,

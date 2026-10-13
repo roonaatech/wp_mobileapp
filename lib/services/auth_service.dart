@@ -477,7 +477,8 @@ class AuthService with ChangeNotifier {
     // Call backend logout endpoint to log activity server-side
     if (token != null) {
       try {
-        await http.post(
+        final client = _createHttpClient();
+        await client.post(
           Uri.parse('${AppConfig.apiBaseUrl}/api/auth/logout'),
           headers: {
             'Content-Type': 'application/json',
