@@ -562,25 +562,44 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
-  Future<void> updateOnDutyDetails(int id, String clientName, String location, String purpose, String endLocation) async {
+  Future<void> updateOnDutyDetails(
+    int id,
+    String clientName,
+    String location,
+    String purpose,
+    String endLocation, {
+    String? endTime,
+  }) async {
     final url = '${AppConfig.onDutyDetail}/$id';
     try {
+      final Map<String, dynamic> body = {
+        'client_name': clientName,
+        'location': location,
+        'purpose': purpose,
+        'end_location': endLocation,
+      };
+      if (endTime != null && endTime.isNotEmpty) {
+        body['end_time'] = endTime;
+      }
+
       final response = await _client.put(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
           'x-access-token': token!,
         },
-        body: json.encode({
-          'client_name': clientName,
-          'location': location,
-          'purpose': purpose,
-          'end_location': endLocation,
-        }),
+        body: json.encode(body),
       );
 
       if (response.statusCode != 200) {
-        throw Exception('Failed to update on-duty details');
+        String msg = 'Failed to update on-duty details';
+        try {
+          final resData = json.decode(response.body);
+          if (resData['message'] != null) {
+            msg = resData['message'];
+          }
+        } catch (_) {}
+        throw Exception(msg);
       }
       notifyListeners();
     } catch (error) {
