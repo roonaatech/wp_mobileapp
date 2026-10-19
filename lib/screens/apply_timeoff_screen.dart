@@ -133,6 +133,18 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     return _holidaysMap.containsKey(d);
   }
 
+  bool get _isTodayHoliday {
+    final now = ISTHelper.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return _holidaysMap.containsKey(today);
+  }
+
+  String? get _todayHolidayName {
+    final now = ISTHelper.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return _holidaysMap[today];
+  }
+
   bool _isCurrentlyCheckedIn = false;
 
   Future<void> _checkTodayAttendanceStatus() async {
@@ -401,6 +413,11 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     
+    if (_isTodayHoliday && widget.existingRequest == null) {
+      showErrorDialog(context, 'Today is a company holiday ($_todayHolidayName). Time-off requests cannot be submitted today.');
+      return;
+    }
+
     if (_selectedDate == null) {
       showErrorDialog(context, 'Please select a date');
       return;
@@ -521,6 +538,34 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (_isTodayHoliday && widget.existingRequest == null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFF59E0B)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.celebration, color: Color(0xFFB45309), size: 22),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Today is a company holiday ($_todayHolidayName). Time-off requests cannot be submitted today.',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               // Office Hours info banner
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -740,7 +785,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
               const SizedBox(height: 24),
 
               ElevatedButton(
-                onPressed: (_isLoading || _isOutsideOfficeHours || _isCurrentlyCheckedInToday || _isSelectedDateHoliday) ? null : _submit,
+                onPressed: (_isLoading || (_isTodayHoliday && widget.existingRequest == null) || _isOutsideOfficeHours || _isCurrentlyCheckedInToday || _isSelectedDateHoliday) ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,

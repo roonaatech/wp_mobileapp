@@ -38,6 +38,18 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   bool _isHalfDay = false;
   String? _todayAttendanceStatus;
 
+  bool get _isTodayHoliday {
+    final now = ISTHelper.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return _holidaysMap.containsKey(today);
+  }
+
+  String? get _todayHolidayName {
+    final now = ISTHelper.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return _holidaysMap[today];
+  }
+
   // Calculate leave days excluding Sundays, company holidays, and any dates in excludeStatusMap (Approved/Pending)
   int _calculateLeaveDays(DateTime startDate, DateTime endDate, {Map<DateTime, String>? excludeStatusMap}) {
     if (startDate.isAfter(endDate)) return 0;
@@ -415,6 +427,34 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (_isTodayHoliday && widget.existingLeave == null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFF59E0B)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.celebration, color: Color(0xFFB45309), size: 22),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Today is a company holiday ($_todayHolidayName). Leave requests cannot be submitted today.',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               TextFormField(
                 readOnly: true,
                 controller: TextEditingController(text: _leaveType ?? ''),
@@ -642,7 +682,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: (_isLoading || _isExceedingLimit() || _isHolidayRestricted() || (_startDate != null && _endDate != null && _findAttendedDateInRange(_startDate!, _endDate!) != null)) ? null : _submitLeave,
+                onPressed: (_isLoading || (_isTodayHoliday && widget.existingLeave == null) || _isExceedingLimit() || _isHolidayRestricted() || (_startDate != null && _endDate != null && _findAttendedDateInRange(_startDate!, _endDate!) != null)) ? null : _submitLeave,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
@@ -942,6 +982,10 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
 
   Future<void> _submitLeave() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_isTodayHoliday && widget.existingLeave == null) {
+      showErrorDialog(context, 'Today is a company holiday ($_todayHolidayName). Leave requests cannot be submitted today.');
+      return;
+    }
     if (_startDate == null || _endDate == null) {
       showErrorDialog(context, 'Please select dates');
       return;
