@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/attendance_service.dart';
+import '../services/auth_service.dart';
 import '../utils/dialogs.dart';
 import '../utils/ist_helper.dart';
 
@@ -23,9 +24,74 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
   TimeOfDay? _endTime;
   bool _isLoading = false;
 
+  TimeOfDay _officeStartTime = const TimeOfDay(hour: 9, minute: 30);
+  TimeOfDay _officeEndTime = const TimeOfDay(hour: 18, minute: 30);
+  String? _todayAttendanceStatus;
+  Map<DateTime, String> _holidaysMap = {};
+  int _timeOffPastDaysAllowed = 0;
+  DateTime _minTimeOffDate = DateTime.now();
+
+  DateTime _computeMinTimeOffDate(int pastDaysAllowed) {
+    final today = ISTHelper.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    if (pastDaysAllowed <= 0) return todayOnly;
+    DateTime cursor = todayOnly;
+    int workingDaysBack = 0;
+    while (workingDaysBack < pastDaysAllowed) {
+      cursor = cursor.subtract(const Duration(days: 1));
+      final cursorKey = DateTime(cursor.year, cursor.month, cursor.day);
+      if (cursor.weekday != DateTime.sunday && !_holidaysMap.containsKey(cursorKey)) {
+        workingDaysBack++;
+      }
+    }
+    return cursor;
+  }
+
+  Future<void> _fetchTimeOffPastDaysAllowed() async {
+    try {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final settings = await AuthService.fetchGlobalSettings(token: authService.token);
+      int val = 0;
+      if (settings != null) {
+        val = int.tryParse(settings['time_off_past_days_allowed'] ?? '0') ?? 0;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('time_off_past_days_allowed', val.toString());
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        val = int.tryParse(prefs.getString('time_off_past_days_allowed') ?? '0') ?? 0;
+      }
+      if (mounted) {
+        setState(() {
+          _timeOffPastDaysAllowed = val;
+          _minTimeOffDate = _computeMinTimeOffDate(val);
+        });
+      }
+    } catch (e) {
+      print('Failed to load time_off_past_days_allowed: $e');
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final val = int.tryParse(prefs.getString('time_off_past_days_allowed') ?? '0') ?? 0;
+        if (mounted) {
+          setState(() {
+            _timeOffPastDaysAllowed = val;
+            _minTimeOffDate = _computeMinTimeOffDate(val);
+          });
+        }
+      } catch (_) {}
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _minTimeOffDate = _computeMinTimeOffDate(0);
+    _loadOfficeHours();
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (authService.isAttendanceModuleEnabled) {
+      _checkTodayAttendanceStatus();
+    }
+    _fetchHolidays();
+    _fetchTimeOffPastDaysAllowed();
     if (widget.existingRequest != null) {
       _initializeForEdit();
     } else {
@@ -37,10 +103,116 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     }
   }
 
+  Future<void> _fetchHolidays() async {
+    try {
+      final service = Provider.of<AttendanceService>(context, listen: false);
+      final map = await service.getHolidaysMap();
+      final Map<DateTime, String> dtMap = {};
+      map.forEach((k, v) {
+        try {
+          final p = k.split('-');
+          if (p.length == 3) {
+            dtMap[DateTime(int.parse(p[0]), int.parse(p[1]), int.parse(p[2]))] = v;
+          }
+        } catch (_) {}
+      });
+      if (mounted) {
+        setState(() {
+          _holidaysMap = dtMap;
+          _minTimeOffDate = _computeMinTimeOffDate(_timeOffPastDaysAllowed);
+        });
+      }
+    } catch (e) {
+      print('Error fetching holidays in timeoff: $e');
+    }
+  }
+
+  bool get _isSelectedDateHoliday {
+    if (_selectedDate == null) return false;
+    final d = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day);
+    return _holidaysMap.containsKey(d);
+  }
+
+  bool get _isTodayHoliday {
+    final now = ISTHelper.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return _holidaysMap.containsKey(today);
+  }
+
+  String? get _todayHolidayName {
+    final now = ISTHelper.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return _holidaysMap[today];
+  }
+
+  bool _isCurrentlyCheckedIn = false;
+
+  Future<void> _checkTodayAttendanceStatus() async {
+    try {
+      final service = Provider.of<AttendanceService>(context, listen: false);
+      final todayData = await service.getMyTodayAttendance();
+      if (mounted) {
+        setState(() {
+          _todayAttendanceStatus = todayData['status'];
+          _isCurrentlyCheckedIn = todayData['checkedIn'] == true || todayData['status'] == 'CHECKED_IN';
+        });
+      }
+    } catch (e) {
+      print('Error fetching today attendance via getMyTodayAttendance: $e');
+      try {
+        final authService = Provider.of<AuthService>(context, listen: false);
+        final email = authService.userEmail;
+        if (email != null && email.isNotEmpty) {
+          final service = Provider.of<AttendanceService>(context, listen: false);
+          final statusRes = await service.getTodayAttendanceStatus(email);
+          if (mounted) {
+            setState(() {
+              _todayAttendanceStatus = statusRes['status'];
+              _isCurrentlyCheckedIn = statusRes['status'] == 'CHECKED_IN';
+            });
+          }
+        }
+      } catch (e2) {
+        print('Error in fallback today attendance: $e2');
+      }
+    }
+  }
+
+  Future<void> _loadOfficeHours() async {
+    try {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final settings = await AuthService.fetchGlobalSettings(token: authService.token);
+      String? startStr;
+      String? endStr;
+      if (settings != null) {
+        startStr = settings['office_start_time'];
+        endStr = settings['office_end_time'];
+        final prefs = await SharedPreferences.getInstance();
+        if (startStr != null) await prefs.setString('office_start_time', startStr);
+        if (endStr != null) await prefs.setString('office_end_time', endStr);
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        startStr = prefs.getString('office_start_time');
+        endStr = prefs.getString('office_end_time');
+      }
+
+      if (startStr != null && startStr.contains(':')) {
+        final parts = startStr.split(':');
+        _officeStartTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+      }
+      if (endStr != null && endStr.contains(':')) {
+        final parts = endStr.split(':');
+        _officeEndTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      print('Error loading office hours: $e');
+    }
+  }
+
   void _initializeForEdit() {
     final req = widget.existingRequest!;
     _reasonController.text = req['subtitle'] ?? ''; // Assuming subtitle holds reason for now or fetch detail
-    // TODO: Verify where reason comes from in list item. Usually it's in 'reason' or 'subtitle'
     if (req['reason'] != null) _reasonController.text = req['reason'];
 
     try {
@@ -65,20 +237,26 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
   Future<void> _selectDate() async {
     final DateTime now = ISTHelper.now();
     DateTime initialDate = _selectedDate ?? now;
+    if (initialDate.isBefore(_minTimeOffDate)) {
+      initialDate = _minTimeOffDate;
+    }
     
-    // showDatePicker fails if initialDate is disabled by selectableDayPredicate (Sunday)
-    if (initialDate.weekday == DateTime.sunday) {
+    // Advance initialDate if it falls on Sunday or a company holiday
+    while (initialDate.weekday == DateTime.sunday || _holidaysMap.containsKey(DateTime(initialDate.year, initialDate.month, initialDate.day))) {
       initialDate = initialDate.add(const Duration(days: 1));
     }
 
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: initialDate,
-      firstDate: now, // Can't apply for past dates usually? Or maybe allow it?
+      firstDate: _minTimeOffDate,
       lastDate: now.add(const Duration(days: 90)),
       selectableDayPredicate: (DateTime day) {
-        // Disable Sundays
-        return day.weekday != DateTime.sunday;
+        final d = DateTime(day.year, day.month, day.day);
+        // Disable Sundays and company holidays
+        if (day.weekday == DateTime.sunday) return false;
+        if (_holidaysMap.containsKey(d)) return false;
+        return true;
       },
       builder: (context, child) {
         return Theme(
@@ -93,10 +271,18 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
         );
       },
     );
+    if (!mounted) return;
     if (picked != null && picked != _selectedDate) {
       if (picked.weekday == DateTime.sunday) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Sundays are not allowed for time-off requests')),
+        );
+        return;
+      }
+      final pDate = DateTime(picked.year, picked.month, picked.day);
+      if (_holidaysMap.containsKey(pDate)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Selected date is a company holiday (${_holidaysMap[pDate]}). Time-off cannot be requested.')),
         );
         return;
       }
@@ -106,12 +292,51 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     }
   }
 
+  String _formatTimeOfDay(TimeOfDay time) {
+    final now = DateTime.now();
+    final dt = DateTime(now.year, now.month, now.day, time.hour, time.minute);
+    return ISTHelper.formatTime(dt);
+  }
+
+  bool get _isOutsideOfficeHours {
+    final officeStartMinutes = _officeStartTime.hour * 60 + _officeStartTime.minute;
+    final officeEndMinutes = _officeEndTime.hour * 60 + _officeEndTime.minute;
+
+    if (_startTime != null) {
+      final startMinutes = _startTime!.hour * 60 + _startTime!.minute;
+      if (startMinutes < officeStartMinutes || startMinutes >= officeEndMinutes) {
+        return true;
+      }
+    }
+    if (_endTime != null) {
+      final endMinutes = _endTime!.hour * 60 + _endTime!.minute;
+      if (endMinutes <= officeStartMinutes || endMinutes > officeEndMinutes) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool get _isSelectedDateToday {
+    if (_selectedDate == null) return false;
+    final now = ISTHelper.now();
+    return _selectedDate!.year == now.year &&
+        _selectedDate!.month == now.month &&
+        _selectedDate!.day == now.day;
+  }
+
+  bool get _isCurrentlyCheckedInToday {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (!authService.isAttendanceModuleEnabled) return false;
+    return _isSelectedDateToday && (_isCurrentlyCheckedIn || _todayAttendanceStatus == 'CHECKED_IN');
+  }
+
   Future<void> _selectTime(bool isStart) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: isStart 
-          ? (_startTime ?? const TimeOfDay(hour: 9, minute: 0))
-          : (_endTime ?? const TimeOfDay(hour: 18, minute: 0)),
+          ? (_startTime ?? _officeStartTime)
+          : (_endTime ?? _officeEndTime),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -126,16 +351,39 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
       },
     );
     
+    if (!mounted) return;
     if (picked != null) {
       setState(() {
+        final officeStartMinutes = _officeStartTime.hour * 60 + _officeStartTime.minute;
+        final officeEndMinutes = _officeEndTime.hour * 60 + _officeEndTime.minute;
+        final pickedMinutes = picked.hour * 60 + picked.minute;
+
         if (isStart) {
           _startTime = picked;
-          // Auto set end time to start + 1 hour if not set or invalid
-          if (_endTime == null || (_endTime!.hour < picked.hour) || (_endTime!.hour == picked.hour && _endTime!.minute <= picked.minute)) {
-             _endTime = TimeOfDay(hour: (picked.hour + 2) % 24, minute: picked.minute);
+          if (pickedMinutes < officeStartMinutes || pickedMinutes >= officeEndMinutes) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Start time must be within office hours (${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)})'),
+                backgroundColor: Colors.red[700],
+              ),
+            );
+          }
+          // Auto set end time to start + 2 hours clamped to officeEnd
+          if (_endTime == null || (_endTime!.hour * 60 + _endTime!.minute <= pickedMinutes)) {
+            final targetMinutes = pickedMinutes + 120;
+            final clampedMinutes = targetMinutes > officeEndMinutes ? officeEndMinutes : targetMinutes;
+            _endTime = TimeOfDay(hour: clampedMinutes ~/ 60, minute: clampedMinutes % 60);
           }
         } else {
           _endTime = picked;
+          if (pickedMinutes <= officeStartMinutes || pickedMinutes > officeEndMinutes) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('End time must be within office hours (${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)})'),
+                backgroundColor: Colors.red[700],
+              ),
+            );
+          }
         }
       });
     }
@@ -143,9 +391,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
 
   String _formatTime(TimeOfDay? time) {
     if (time == null) return 'Select Time';
-    final now = DateTime.now();
-    final dt = DateTime(now.year, now.month, now.day, time.hour, time.minute);
-    return ISTHelper.formatTime(dt);
+    return _formatTimeOfDay(time);
   }
 
   String _calculateDuration() {
@@ -167,8 +413,21 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     
+    if (_isTodayHoliday && widget.existingRequest == null) {
+      showErrorDialog(context, 'Today is a company holiday ($_todayHolidayName). Time-off requests cannot be submitted today.');
+      return;
+    }
+
     if (_selectedDate == null) {
       showErrorDialog(context, 'Please select a date');
+      return;
+    }
+
+    if (_isCurrentlyCheckedInToday) {
+      showErrorDialog(
+        context,
+        'You are currently checked in today. Time-off can only be applied after checking out for the day.',
+      );
       return;
     }
     if (_startTime == null || _endTime == null) {
@@ -179,8 +438,40 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     // Validate times
     final startMinutes = _startTime!.hour * 60 + _startTime!.minute;
     final endMinutes = _endTime!.hour * 60 + _endTime!.minute;
+    final officeStartMinutes = _officeStartTime.hour * 60 + _officeStartTime.minute;
+    final officeEndMinutes = _officeEndTime.hour * 60 + _officeEndTime.minute;
+
     if (endMinutes <= startMinutes) {
       showErrorDialog(context, 'End time must be after start time');
+      return;
+    }
+
+    if (startMinutes < officeStartMinutes || startMinutes >= officeEndMinutes) {
+      showErrorDialog(
+        context,
+        'Start time (${_formatTime(_startTime)}) must be within configured office hours (${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)}). Requests outside office hours are not allowed.',
+      );
+      return;
+    }
+
+    if (endMinutes <= officeStartMinutes || endMinutes > officeEndMinutes) {
+      showErrorDialog(
+        context,
+        'End time (${_formatTime(_endTime)}) must be within configured office hours (${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)}). Requests outside office hours are not allowed.',
+      );
+      return;
+    }
+
+    final selDateOnly = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day);
+    final minDateOnly = DateTime(_minTimeOffDate.year, _minTimeOffDate.month, _minTimeOffDate.day);
+    if (selDateOnly.isBefore(minDateOnly)) {
+      showErrorDialog(context, 'Time-off cannot be requested for dates more than $_timeOffPastDaysAllowed working day(s) in the past.');
+      return;
+    }
+
+    if (_isSelectedDateHoliday) {
+      final d = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day);
+      showErrorDialog(context, 'Selected date is a company holiday (${_holidaysMap[d]}). Time-off cannot be requested.');
       return;
     }
 
@@ -247,6 +538,59 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (_isTodayHoliday && widget.existingRequest == null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFF59E0B)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.celebration, color: Color(0xFFB45309), size: 22),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Today is a company holiday ($_todayHolidayName). Time-off requests cannot be submitted today.',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              // Office Hours info banner
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFBBF7D0)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.schedule, size: 16, color: Color(0xFF16A34A)),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Office Hours: ${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF15803D),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
               // Date Selection
               InkWell(
                 onTap: _selectDate,
@@ -266,6 +610,62 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
                   ),
                 ),
               ),
+              if (_isSelectedDateHoliday)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEEBEE),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFC1272D)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: Color(0xFFC1272D), size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Selected date is a company holiday (${_holidaysMap[DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day)]}). Time-off cannot be requested.',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFC1272D),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (_isCurrentlyCheckedInToday)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFF59E0B)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Color(0xFFB45309), size: 18),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'You are currently checked in today. Time-off can only be applied after checking out for the day.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               const SizedBox(height: 16),
 
               // Time Selection Row
@@ -275,10 +675,19 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
                     child: InkWell(
                       onTap: () => _selectTime(true),
                       child: InputDecorator(
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Start Time',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.access_time),
+                          border: const OutlineInputBorder(),
+                          prefixIcon: const Icon(Icons.access_time),
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: _startTime != null &&
+                                      (_startTime!.hour * 60 + _startTime!.minute < _officeStartTime.hour * 60 + _officeStartTime.minute ||
+                                          _startTime!.hour * 60 + _startTime!.minute >= _officeEndTime.hour * 60 + _officeEndTime.minute)
+                                  ? Colors.red
+                                  : Colors.grey[400]!,
+                            ),
+                          ),
                         ),
                         child: Text(
                           _formatTime(_startTime),
@@ -294,10 +703,19 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
                     child: InkWell(
                       onTap: () => _selectTime(false),
                       child: InputDecorator(
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'End Time',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.access_time_filled),
+                          border: const OutlineInputBorder(),
+                          prefixIcon: const Icon(Icons.access_time_filled),
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: _endTime != null &&
+                                      (_endTime!.hour * 60 + _endTime!.minute <= _officeStartTime.hour * 60 + _officeStartTime.minute ||
+                                          _endTime!.hour * 60 + _endTime!.minute > _officeEndTime.hour * 60 + _officeEndTime.minute)
+                                  ? Colors.red
+                                  : Colors.grey[400]!,
+                            ),
+                          ),
                         ),
                         child: Text(
                           _formatTime(_endTime),
@@ -311,7 +729,32 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
                 ],
               ),
               
-              if (_startTime != null && _endTime != null)
+              if (_isOutsideOfficeHours)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.red[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red[200]!),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline, size: 16, color: Colors.red[700]),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Time-off must be within office hours (${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)}). Any time beyond is not allowed.',
+                            style: TextStyle(fontSize: 11, color: Colors.red[700], fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              if (_startTime != null && _endTime != null && !_isOutsideOfficeHours)
                 Padding(
                   padding: const EdgeInsets.only(top: 8.0, left: 4),
                   child: Text(
@@ -342,7 +785,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
               const SizedBox(height: 24),
 
               ElevatedButton(
-                onPressed: _isLoading ? null : _submit,
+                onPressed: (_isLoading || (_isTodayHoliday && widget.existingRequest == null) || _isOutsideOfficeHours || _isCurrentlyCheckedInToday || _isSelectedDateHoliday) ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
@@ -363,3 +806,4 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
     );
   }
 }
+

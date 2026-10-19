@@ -1,30 +1,175 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:attendance_app/main.dart';
+import 'package:provider/provider.dart';
+import 'package:attendance_app/screens/login_screen.dart';
+import 'package:attendance_app/screens/home_screen.dart';
+import 'package:attendance_app/services/auth_service.dart';
+import 'package:attendance_app/services/attendance_service.dart';
+import 'package:attendance_app/utils/ist_helper.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  setUpAll(() async {
+    await ISTHelper.initialize();
+  });
+  testWidgets('LoginScreen renders successfully with Poppins fonts', (WidgetTester tester) async {
+    // Set a large enough surface size so all widgets fit without scrolling issues in test
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthService()),
+        ],
+        child: const MaterialApp(
+          home: LoginScreen(),
+        ),
+      ),
+    );
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Verify brand and form elements are present
+    expect(find.text('WorkPulse'), findsOneWidget);
+    expect(find.text('MANAGEMENT'), findsOneWidget);
+    expect(find.text('SIGN IN TO WORKPULSE'), findsOneWidget);
+    expect(find.byType(TextFormField), findsNWidgets(2));
+
+    // Verify Remember Me checkbox and Forgot Password button
+    expect(find.text('Remember me'), findsOneWidget);
+    expect(find.text('Forgot Password?'), findsOneWidget);
   });
+
+  testWidgets('Tapping Forgot Password navigates to ForgotPasswordScreen', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthService()),
+        ],
+        child: const MaterialApp(
+          home: LoginScreen(),
+        ),
+      ),
+    );
+
+    await tester.pump();
+
+    // Tap Forgot Password?
+    await tester.tap(find.text('Forgot Password?'));
+    await tester.pumpAndSettle();
+
+    // Verify ForgotPasswordScreen elements
+    expect(find.text('Forgot Password?'), findsOneWidget);
+    expect(find.text('Send Temporary Password'), findsOneWidget);
+    expect(find.byType(TextFormField), findsOneWidget);
+  });
+
+  testWidgets('HomeScreen displays only 4 nav items when canAccessAttendancePortal is false', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final mockAuth = MockAuthService(canAccessTerminal: false);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthService>.value(value: mockAuth),
+          ChangeNotifierProvider<AttendanceService>(create: (_) => AttendanceService(token: 'mock-token')),
+        ],
+        child: const MaterialApp(
+          home: HomeScreen(),
+        ),
+      ),
+    );
+
+    await tester.pump();
+
+    // Verify 4 tabs exist
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Leave'), findsOneWidget);
+    expect(find.text('Time-Off'), findsOneWidget);
+    expect(find.text('On-Duty'), findsOneWidget);
+    // QR Terminal tab should NOT exist
+    expect(find.text('QR Terminal'), findsNothing);
+  });
+
+  testWidgets('HomeScreen displays only QR Terminal option when canAccessAttendancePortal is true', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final mockAuth = MockAuthService(canAccessTerminal: true);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthService>.value(value: mockAuth),
+          ChangeNotifierProvider<AttendanceService>(create: (_) => AttendanceService(token: 'mock-token')),
+        ],
+        child: const MaterialApp(
+          home: HomeScreen(),
+        ),
+      ),
+    );
+
+    await tester.pump();
+
+    // Verify only QR Terminal exists and standard employee tabs do NOT exist
+    expect(find.text('QR Terminal'), findsOneWidget);
+    expect(find.text('Home'), findsNothing);
+    expect(find.text('Leave'), findsNothing);
+    expect(find.text('Time-Off'), findsNothing);
+    expect(find.text('On-Duty'), findsNothing);
+  });
+}
+
+class MockAuthService extends ChangeNotifier implements AuthService {
+  final bool _canAccessTerminal;
+  MockAuthService({bool canAccessTerminal = false}) : _canAccessTerminal = canAccessTerminal;
+
+  @override
+  bool get canAccessAttendancePortal => _canAccessTerminal;
+
+  @override
+  String? get token => 'mock-token';
+
+  @override
+  String? get userId => '1';
+
+  @override
+  String? get userName => 'Test User';
+
+  @override
+  String? get userEmail => 'test@user.com';
+
+  @override
+  bool get isAuth => true;
+
+  @override
+  bool get mustChangePassword => false;
+
+  @override
+  String? get currentPassword => 'test';
+
+  @override
+  bool get isWorkPulseOnlyUser => false;
+
+  @override
+  bool get isServiceAccount => false;
+
+  @override
+  bool get isWfhToday => false;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

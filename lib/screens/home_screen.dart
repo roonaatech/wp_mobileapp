@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../services/auth_service.dart';
 import '../services/attendance_service.dart';
 import '../utils/dialogs.dart';
@@ -7,7 +8,8 @@ import '../utils/ist_helper.dart';
 import 'apply_leave_screen.dart';
 import 'apply_timeoff_screen.dart';
 import 'on_duty_screen.dart';
-import 'package:intl/intl.dart';
+import 'kiosk_attendance_screen.dart';
+import 'my_attendance_badge_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -26,15 +28,16 @@ class _HomeScreenState extends State<HomeScreen> {
       // If tapping Home while on Home, refresh
       _dashboardKey.currentState?._loadLeaves();
     } else {
-      if (index == 2) {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final int timeOffIndex = authService.isAttendanceModuleEnabled ? 3 : 2;
+      if (index == timeOffIndex) {
         // Reset Time-Off screen when navigating to it
         _timeOffKey = UniqueKey();
       }
       setState(() {
         _currentIndex = index;
       });
-      // If coming back to home, maybe refresh? 
-      // IndexedStack keeps state, so we might want to refresh explicitly if we want fresh data every time we visit Home.
+      // If coming back to home, refresh
       if (index == 0) {
          _dashboardKey.currentState?._loadLeaves();
       }
@@ -82,20 +85,127 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authService = Provider.of<AuthService>(context, listen: false);
+    final authService = Provider.of<AuthService>(context);
+    final bool canAccessAttendance = authService.canAccessAttendancePortal;
+    final bool attendanceEnabled = authService.isAttendanceModuleEnabled;
+    final bool isWfhDay = authService.isWfhToday;
 
-    return Scaffold(
+    if (canAccessAttendance) {
+      if (!attendanceEnabled) {
+        return Scaffold(
+          backgroundColor: const Color(0xFF0F172A),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.lock_clock_rounded,
+                      color: Colors.amber,
+                      size: 40,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Attendance Module Disabled',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'The Attendance & Terminal module is currently disabled by your organization administrator in General Settings.',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 14,
+                      color: Colors.grey.shade400,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 28),
+                  OutlinedButton.icon(
+                    onPressed: () => authService.logout(),
+                    icon: const Icon(Icons.logout, color: Colors.white70),
+                    label: const Text('Sign Out', style: TextStyle(color: Colors.white70)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.grey.shade700),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+
+      return Scaffold(
+        body: const KioskAttendanceScreen(),
+        bottomNavigationBar: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: Colors.grey.shade200)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, -5),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildNavItem(
+                icon: Icons.qr_code_scanner_rounded, 
+                label: 'QR Terminal', 
+                index: 0,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final List<Widget> screens = [
+      LeaveDashboard(key: _dashboardKey),
+      if (attendanceEnabled) MyAttendanceBadgeScreen(onBackToHome: _goToHomeAndRefresh),
+      ApplyLeaveScreen(onSuccess: _goToHomeAndRefresh),
+      ApplyTimeOffScreen(key: _timeOffKey, onSuccess: _goToHomeAndRefresh),
+      OnDutyScreen(onVisitEnded: _goToHomeAndRefresh),
+    ];
+
+    if (_currentIndex >= screens.length) {
+      _currentIndex = 0;
+    }
+
+    return PopScope(
+      canPop: _currentIndex == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_currentIndex != 0) {
+          _goToHomeAndRefresh();
+        }
+      },
+      child: Scaffold(
         body: IndexedStack(
           index: _currentIndex,
-          children: [
-            LeaveDashboard(key: _dashboardKey),
-            ApplyLeaveScreen(onSuccess: _goToHomeAndRefresh),
-            ApplyTimeOffScreen(key: _timeOffKey, onSuccess: _goToHomeAndRefresh),
-            OnDutyScreen(onVisitEnded: _goToHomeAndRefresh),
-          ],
+          children: screens,
         ),
         bottomNavigationBar: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
             color: Colors.white,
             border: Border(top: BorderSide(color: Colors.grey.shade200)),
@@ -115,25 +225,32 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: 'Home', 
                 index: 0,
               ),
+              if (attendanceEnabled)
+                _buildNavItem(
+                  icon: isWfhDay ? Icons.home_work_rounded : Icons.qr_code_2_rounded, 
+                  label: isWfhDay ? 'WFH Punch' : 'Badge', 
+                  index: 1,
+                ),
               _buildNavItem(
                 icon: Icons.calendar_month_outlined, 
                 label: 'Leave', 
-                index: 1,
+                index: attendanceEnabled ? 2 : 1,
               ),
               _buildNavItem(
                 icon: Icons.access_time, 
                 label: 'Time-Off', 
-                index: 2,
+                index: attendanceEnabled ? 3 : 2,
               ),
               _buildNavItem(
                 icon: Icons.business_center_outlined, 
                 label: 'On-Duty', 
-                index: 3,
+                index: attendanceEnabled ? 4 : 3,
               ),
             ],
           ),
         ),
-      );
+      ),
+    );
   }
 
   Widget _buildNavItem({
@@ -144,25 +261,30 @@ class _HomeScreenState extends State<HomeScreen> {
     final isSelected = _currentIndex == index;
     final color = isSelected ? const Color(0xFF3B82F6) : Colors.grey[600];
     
-    return InkWell(
-      onTap: () => _onTabTapped(index),
-      borderRadius: BorderRadius.circular(50),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color, size: 26),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: color, 
-                fontSize: 12, 
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal
+    return Expanded(
+      child: InkWell(
+        onTap: () => _onTabTapped(index),
+        borderRadius: BorderRadius.circular(50),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 24),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: color, 
+                  fontSize: 11, 
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -183,6 +305,9 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
   List<dynamic> _filteredLeaves = [];
   int _selectedYear = ISTHelper.now().year;
   Set<int> _availableYears = {};
+  Map<String, String> _holidaysMap = {};
+  bool _isTodayHoliday = false;
+  String? _todayHolidayName;
   final ScrollController _statsScrollController = ScrollController();
   Map<String, dynamic> _stats = {
     'totalLeaves': 0,
@@ -230,6 +355,12 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
       final service = Provider.of<AttendanceService>(context, listen: false);
       final leaves = await service.getMyLeaves();
       final stats = await service.getDashboardStats();
+      Map<String, String> holidaysMap = {};
+      try {
+        holidaysMap = await service.getHolidaysMap();
+      } catch (_) {}
+      final todayStr = DateFormat('yyyy-MM-dd').format(ISTHelper.now());
+      final holidayName = holidaysMap[todayStr];
       
       if (mounted) {
         // Extract available years from leaves data
@@ -258,6 +389,9 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
         setState(() {
           _leaves = leaves;
           _stats = stats;
+          _holidaysMap = holidaysMap;
+          _isTodayHoliday = holidayName != null;
+          _todayHolidayName = holidayName;
           _availableYears = years;
           _selectedYear = ISTHelper.now().year;
           // Always default to Pending filter on home page
@@ -770,20 +904,67 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
               
               // Subtitle/Location (Hide if Time-Off since it's in title/date)
               if (item['type'] != 'time_off' && item['subtitle'] != null) ...[
-                Text(
-                  'Details',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey[700],
+                if (item['type'] == 'on_duty' || item['type'] == 'on-duty') ...[
+                  Text(
+                    'Start Location',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  item['subtitle'],
-                  style: TextStyle(color: Colors.grey[700], fontSize: 13),
-                ),
-                const SizedBox(height: 16),
+                  const SizedBox(height: 6),
+                  Text(
+                    item['location'] ?? 'N/A',
+                    style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                  if (item['end_location'] != null && item['end_location'].toString().isNotEmpty) ...[
+                    Text(
+                      'End Location',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      item['end_location'],
+                      style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  Text(
+                    'Purpose',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    item['purpose'] ?? 'N/A',
+                    style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                ] else ...[
+                  Text(
+                    'Details',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    item['subtitle'],
+                    style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ],
               
               // Reason/Notes
@@ -1064,7 +1245,8 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final authService = Provider.of<AuthService>(context, listen: false);
+    final authService = Provider.of<AuthService>(context);
+    final bool isWfhDay = authService.isWfhToday;
 
     return Column(
       children: [
@@ -1100,6 +1282,21 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                   ),
                   Row(
                     children: [
+                      if (authService.isAttendanceModuleEnabled)
+                        IconButton(
+                          icon: Icon(isWfhDay ? Icons.home_work_rounded : Icons.qr_code_2_rounded, color: Colors.white),
+                          tooltip: isWfhDay ? 'WFH Attendance Punch' : 'My Smart Badge',
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => MyAttendanceBadgeScreen(
+                                  onBackToHome: () => Navigator.of(context).pop(),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       // Settings Menu (only show if WorkPulse-only user)
                       if (authService.isWorkPulseOnlyUser)
                         PopupMenuButton<String>(
@@ -1131,6 +1328,149 @@ class _LeaveDashboardState extends State<LeaveDashboard> {
                 ],
               ),
             ],
+          ),
+        ),
+
+        // Smart Badge / WFH Punch Quick Action Banner
+        if (authService.isAttendanceModuleEnabled)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => MyAttendanceBadgeScreen(
+                    onBackToHome: () => Navigator.of(context).pop(),
+                  ),
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _isTodayHoliday
+                    ? const Color(0xFF14B8A6).withOpacity(0.35)
+                    : (isWfhDay 
+                        ? const Color(0xFF10B981).withOpacity(0.35) 
+                        : const Color(0xFF38BDF8).withOpacity(0.35)),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: _isTodayHoliday
+                      ? const Color(0xFF14B8A6).withOpacity(0.15)
+                      : (isWfhDay 
+                          ? const Color(0xFF10B981).withOpacity(0.12) 
+                          : const Color(0xFF38BDF8).withOpacity(0.12)),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: _isTodayHoliday
+                          ? [const Color(0xFF0D9488), const Color(0xFF14B8A6)]
+                          : (isWfhDay 
+                              ? [const Color(0xFF059669), const Color(0xFF10B981)] 
+                              : [const Color(0xFF6366F1), const Color(0xFF06B6D4)]),
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      _isTodayHoliday
+                        ? Icons.beach_access_rounded
+                        : (isWfhDay ? Icons.home_work_rounded : Icons.qr_code_2_rounded), 
+                      color: Colors.white, 
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                _isTodayHoliday
+                                  ? 'Company Holiday'
+                                  : (isWfhDay ? 'WFH Attendance' : 'My Attendance Badge'),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: _isTodayHoliday
+                                  ? const Color(0xFF14B8A6).withOpacity(0.2)
+                                  : (isWfhDay 
+                                      ? const Color(0xFF10B981).withOpacity(0.2) 
+                                      : const Color(0xFF06B6D4).withOpacity(0.2)),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                _isTodayHoliday
+                                  ? '• HOLIDAY'
+                                  : (isWfhDay ? '• REMOTE' : '• LIVE'),
+                                style: TextStyle(
+                                  color: _isTodayHoliday
+                                    ? const Color(0xFF2DD4BF)
+                                    : (isWfhDay ? const Color(0xFF34D399) : const Color(0xFF38BDF8)),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _isTodayHoliday
+                            ? 'Today is $_todayHolidayName. Office is closed.'
+                            : (isWfhDay 
+                                ? 'Tap to punch check-in / check-out' 
+                                : 'Tap to scan at front desk kiosk'),
+                          style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 12,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded, 
+                    color: _isTodayHoliday
+                      ? const Color(0xFF2DD4BF)
+                      : (isWfhDay ? const Color(0xFF34D399) : const Color(0xFF38BDF8)), 
+                    size: 22,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
 

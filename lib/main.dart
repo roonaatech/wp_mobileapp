@@ -9,10 +9,14 @@ import 'screens/change_password_screen.dart';
 import 'services/attendance_service.dart';
 import 'services/auth_service.dart';
 import 'utils/ist_helper.dart';
+import 'config/app_config.dart';
 
 void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+
+    // Initialize AppConfig (detects physical Android device vs emulator)
+    await AppConfig.initialize();
 
     // Initialize timezone helper
     await ISTHelper.initialize();
@@ -34,14 +38,16 @@ void main() {
       print('Error fetching settings, using defaults: $e');
     }
 
-    // Suppress google_fonts asset loading errors (they'll fallback to system fonts)
+    // Suppress google_fonts asset loading errors (they'll fallback to bundled/system fonts)
     GoogleFonts.config.allowRuntimeFetching = false;
     
     // Catch Flutter framework errors
     FlutterError.onError = (FlutterErrorDetails details) {
+      final exStr = details.exception.toString().toLowerCase();
       // Suppress google_fonts AssetManifest errors
-      if (details.exception.toString().contains('AssetManifest.json') ||
-          details.exception.toString().contains('google_fonts')) {
+      if (exStr.contains('assetmanifest.json') ||
+          exStr.contains('google_fonts') ||
+          exStr.contains('googlefonts')) {
         if (kDebugMode) {
           print('Google Fonts fallback: ${details.exception}');
         }
@@ -67,9 +73,11 @@ void main() {
       ),
     );
   }, (error, stackTrace) {
+    final errStr = error.toString().toLowerCase();
     // Suppress google_fonts AssetManifest errors
-    if (error.toString().contains('AssetManifest.json') ||
-        error.toString().contains('google_fonts')) {
+    if (errStr.contains('assetmanifest.json') ||
+        errStr.contains('google_fonts') ||
+        errStr.contains('googlefonts')) {
       if (kDebugMode) {
         print('Google Fonts fallback (uncaught): $error');
       }
@@ -101,18 +109,49 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  late Future<bool> _autoLoginFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoLoginFuture = Provider.of<AuthService>(context, listen: false).tryAutoLogin();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<AuthService>(
       builder: (ctx, authService, _) {
         if (authService.isAuth) {
+          if (authService.mustChangePassword) {
+            return const ChangePasswordScreen(isMandatory: true);
+          }
           return const HomeScreen();
-        } else {
-          return const LoginScreen();
         }
+
+        return FutureBuilder<bool>(
+          future: _autoLoginFuture,
+          builder: (ctx, authResultSnapshot) {
+            if (authResultSnapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                backgroundColor: Colors.white,
+                body: Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF3B82F6),
+                  ),
+                ),
+              );
+            }
+            return const LoginScreen();
+          },
+        );
       },
     );
   }

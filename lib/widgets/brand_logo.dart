@@ -27,37 +27,37 @@ class _BrandLogoPainter extends CustomPainter {
     final h = size.height;
     final center = Offset(w / 2, h / 2);
 
-    // Gradient definition
-    final brandGradient = const LinearGradient(
-      colors: [Color(0xFF2563EB), Color(0xFF7C3AED)],
+    // High-vibrancy Electric Blue to Punchy Violet Gradient
+    const brandGradient = LinearGradient(
+      colors: [Color(0xFF2563EB), Color(0xFF4F46E5), Color(0xFF9333EA)],
       begin: Alignment.centerLeft,
       end: Alignment.centerRight,
     );
     
-    final calGradient = const LinearGradient(
-      colors: [Color(0xFFF3F4F6), Color(0xFFE5E7EB)],
+    const calGradient = LinearGradient(
+      colors: [Colors.white, Color(0xFFF8FAFC)],
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
     );
 
-    // 1. Outer Circle (SVG: cx=50, cy=50, r=46, strokeWidth=6)
+    // 1. Outer Circle (SVG: cx=50, cy=50, r=45, strokeWidth=7.5)
     final outerPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = w * 0.06
+      ..strokeWidth = w * 0.075
       ..shader = brandGradient.createShader(
-        Rect.fromCircle(center: center, radius: w * 0.46),
+        Rect.fromCircle(center: center, radius: w * 0.45),
       )
       ..strokeCap = StrokeCap.round;
 
-    canvas.drawCircle(center, w * 0.46, outerPaint);
+    canvas.drawCircle(center, w * 0.45, outerPaint);
 
-    // Scale factor for inner group (0.75)
-    final scale = 0.75;
+    // Scale factor for inner group (0.74)
+    const scale = 0.74;
     final innerW = w * scale;
     final innerH = h * scale;
     final innerOffset = Offset(w / 2 - innerW / 2, h / 2 - innerH / 2);
 
-    // 2. Calendar Body (SVG: rect x=22, y=25, width=56, height=50)
+    // 2. Calendar Body (SVG: rect x=22, y=25, width=56, height=50, rx=6)
     final calendarLeft = innerOffset.dx + innerW * (22 / 100);
     final calendarTop = innerOffset.dy + innerH * (25 / 100);
     final calendarWidth = innerW * (56 / 100);
@@ -65,7 +65,7 @@ class _BrandLogoPainter extends CustomPainter {
 
     final calendarRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(calendarLeft, calendarTop, calendarWidth, calendarHeight),
-      Radius.circular(w * 0.03),
+      Radius.circular(w * 0.04),
     );
 
     final calendarPaint = Paint()
@@ -76,27 +76,27 @@ class _BrandLogoPainter extends CustomPainter {
 
     canvas.drawRRect(calendarRect, calendarPaint);
 
-    // Calendar border
+    // Calendar border - Crisp Dark Slate (#334155, strokeWidth: 3.5%)
     final calBorderPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = w * 0.03
-      ..color = const Color(0xFF9CA3AF);
+      ..strokeWidth = w * 0.035
+      ..color = const Color(0xFF334155);
 
     canvas.drawRRect(calendarRect, calBorderPaint);
 
-    // 3. Calendar Rings (SVG: paths for rings at top)
+    // 3. Calendar Rings (strokeWidth: 5.0%, #1E293B)
     final ringPaint = Paint()
-      ..color = const Color(0xFF9CA3AF)
-      ..strokeWidth = w * 0.04
+      ..color = const Color(0xFF1E293B)
+      ..strokeWidth = w * 0.05
       ..strokeCap = StrokeCap.round;
 
-    // Left ring
+    // Left ring (M35 18 v11)
     final ring1X = innerOffset.dx + innerW * (35 / 100);
-    final ring1Y1 = innerOffset.dy + innerH * (20 / 100);
-    final ring1Y2 = ring1Y1 + innerH * 0.1;
+    final ring1Y1 = innerOffset.dy + innerH * (18 / 100);
+    final ring1Y2 = ring1Y1 + innerH * 0.11;
     canvas.drawLine(Offset(ring1X, ring1Y1), Offset(ring1X, ring1Y2), ringPaint);
 
-    // Right ring
+    // Right ring (M65 18 v11)
     final ring2X = innerOffset.dx + innerW * (65 / 100);
     canvas.drawLine(Offset(ring2X, ring1Y1), Offset(ring2X, ring1Y2), ringPaint);
 
@@ -112,40 +112,39 @@ class _BrandLogoPainter extends CustomPainter {
         final y = gridStartY + row * boxSpacing;
 
         final isActive = (row == 0 && col == 3);
-        final boxPaint = Paint()
-          ..style = PaintingStyle.fill;
+        final boxPaint = Paint()..style = PaintingStyle.fill;
 
         if (isActive) {
           boxPaint.shader = brandGradient.createShader(
             Rect.fromLTWH(x, y, boxSize, boxSize),
           );
         } else {
-          boxPaint.color = const Color(0xFFD1D5DB);
+          boxPaint.color = const Color(0xFF94A3B8);
         }
 
         canvas.drawRRect(
           RRect.fromRectAndRadius(
             Rect.fromLTWH(x, y, boxSize, boxSize),
-            Radius.circular(w * 0.01),
+            Radius.circular(w * 0.015),
           ),
           boxPaint,
         );
       }
     }
 
-    // 5. Pulse Waveform (SVG path with stroke)
+    // 5. Pulse Waveform (SVG: M10 50 H23 L32 18 L44 85 L56 24 L65 58 H85, strokeWidth: 7.5%)
     final pulsePath = Path();
-    pulsePath.moveTo(innerOffset.dx + innerW * 0.1, center.dy);
-    pulsePath.lineTo(innerOffset.dx + innerW * 0.24, center.dy);
-    pulsePath.lineTo(innerOffset.dx + innerW * 0.32, center.dy - h * 0.20);
-    pulsePath.lineTo(innerOffset.dx + innerW * 0.44, center.dy + h * 0.25);
+    pulsePath.moveTo(innerOffset.dx + innerW * 0.10, center.dy);
+    pulsePath.lineTo(innerOffset.dx + innerW * 0.23, center.dy);
+    pulsePath.lineTo(innerOffset.dx + innerW * 0.32, center.dy - h * 0.22);
+    pulsePath.lineTo(innerOffset.dx + innerW * 0.44, center.dy + h * 0.26);
     pulsePath.lineTo(innerOffset.dx + innerW * 0.56, center.dy - h * 0.20);
-    pulsePath.lineTo(innerOffset.dx + innerW * 0.64, center.dy + h * 0.12);
+    pulsePath.lineTo(innerOffset.dx + innerW * 0.65, center.dy + h * 0.10);
     pulsePath.lineTo(innerOffset.dx + innerW * 0.85, center.dy);
 
     final pulsePaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = w * 0.04
+      ..strokeWidth = w * 0.075
       ..shader = brandGradient.createShader(
         Rect.fromLTWH(0, 0, w, h),
       )
@@ -154,14 +153,14 @@ class _BrandLogoPainter extends CustomPainter {
 
     canvas.drawPath(pulsePath, pulsePaint);
 
-    // 6. Pulse Dot (SVG: circle at end)
+    // 6. Pulse Dot (circle at 85, 50, radius 5.5%)
     final dotPaint = Paint()
       ..style = PaintingStyle.fill
       ..shader = brandGradient.createShader(
-        Rect.fromCircle(center: center, radius: w * 0.05),
+        Rect.fromCircle(center: center, radius: w * 0.055),
       );
 
-    canvas.drawCircle(Offset(innerOffset.dx + innerW * 0.85, center.dy), w * 0.04, dotPaint);
+    canvas.drawCircle(Offset(innerOffset.dx + innerW * 0.85, center.dy), w * 0.055, dotPaint);
   }
 
   @override

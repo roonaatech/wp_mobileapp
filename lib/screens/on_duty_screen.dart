@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 import '../services/attendance_service.dart';
 import '../utils/ist_helper.dart';
 import '../utils/dialogs.dart';
@@ -20,18 +19,47 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
   final _clientController = TextEditingController();
   final _locationController = TextEditingController();
   final _purposeController = TextEditingController();
+  final _endLocationController = TextEditingController();
   bool _isLoading = false;
   bool _isOnDuty = false;
   int? _activeOnDutyId;
   DateTime? _startTime;
+  bool _isTodayHoliday = false;
+  String? _todayHolidayName;
+
+  DateTime? _editStartTime;
+  DateTime? _editEndTime;
+  DateTime? _editCompletedEndTime;
+  DateTime? _selectedEndDate;
+  TimeOfDay? _selectedEndTime;
 
   @override
   void initState() {
     super.initState();
+    _checkTodayHoliday();
     if (widget.existingLog != null) {
       _initializeForEdit();
     } else {
       _checkActiveOnDuty();
+    }
+  }
+
+  Future<void> _checkTodayHoliday() async {
+    try {
+      final service = Provider.of<AttendanceService>(context, listen: false);
+      final map = await service.getHolidaysMap();
+      final now = ISTHelper.now();
+      final todayStr = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      if (map.containsKey(todayStr)) {
+        if (mounted) {
+          setState(() {
+            _isTodayHoliday = true;
+            _todayHolidayName = map[todayStr];
+          });
+        }
+      }
+    } catch (e) {
+      print('Error checking holiday in on-duty: $e');
     }
   }
 
@@ -53,53 +81,191 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
     _clientController.clear();
     _locationController.clear();
     _purposeController.clear();
+    _endLocationController.clear();
     _startTime = null;
     _isOnDuty = false;
     _activeOnDutyId = null;
+    _editStartTime = null;
+    _editEndTime = null;
+    _editCompletedEndTime = null;
+    _selectedEndDate = null;
+    _selectedEndTime = null;
   }
 
   void _initializeForEdit() {
     final log = widget.existingLog!;
-    // Parse title "On-Duty: ClientName" logic if needed, or get raw data?
-    // The list item has 'title': 'On-Duty: ClientName', 'subtitle': 'Location - Purpose'
-    
-    // We need to parse strictly or better, if the API returned raw data in a hidden field.
-    // Normalized data in getMyLeaves:
-    // title: `On-Duty: ${l.client_name}`,
-    // subtitle: `${l.location} - ${l.purpose}`,
-    
-    // This is lossy! "Location - Purpose" might be ambiguous if location has " - ".
-    // Ideally, I should pass raw fields.
-    // But for now receiving normalized data.
-    // I made a mistake in backend normalization design if I want to edit easily.
-    // However, I can try to parse or just pre-fill what I can.
-    
-    // WAIT! In Step 923 (Leave Controller), I see:
-    // title: `On-Duty: ${l.client_name}`
-    // subtitle: `${l.location} - ${l.purpose}`
-    
-    // I can try to split subtitle by " - ".
-    // Or I can update `leave.controller.js` to send raw fields too?
-    // It sends `id`, `status` etc.
-    
-    String title = log['title'] ?? '';
-    if (title.startsWith('On-Duty: ')) {
-      _clientController.text = title.substring(9);
-    }
-    
-    String subtitle = log['subtitle'] ?? '';
-    List<String> parts = subtitle.split(' - ');
-    if (parts.isNotEmpty) {
-      _locationController.text = parts[0];
-      if (parts.length > 1) {
-        _purposeController.text = parts.sublist(1).join(' - ');
+    _clientController.text = log['client_name'] ?? (log['title']?.startsWith('On-Duty: ') == true ? log['title'].substring(9) : '');
+    _locationController.text = log['location'] ?? '';
+    _endLocationController.text = log['end_location'] ?? '';
+    _purposeController.text = log['purpose'] ?? '';
+    if (_locationController.text.isEmpty && log['subtitle'] != null) {
+      String subtitle = log['subtitle'] ?? '';
+      List<String> parts = subtitle.split(' - ');
+      if (parts.isNotEmpty) {
+        String locationPart = parts[0];
+        if (locationPart.contains(' to ')) {
+          List<String> locs = locationPart.split(' to ');
+          _locationController.text = locs[0];
+          _endLocationController.text = locs.sublist(1).join(' to ');
+        } else {
+          _locationController.text = locationPart;
+        }
+        if (parts.length > 1) {
+          _purposeController.text = parts.sublist(1).join(' - ');
+        }
       }
+    }
+
+    final startStr = log['start_time'] ?? log['start'] ?? '';
+    final endStr = log['end_time'] ?? log['end'] ?? '';
+    final completedStr = log['completed_end_time'] ?? endStr;
+
+    if (startStr.toString().isNotEmpty) {
+      _editStartTime = ISTHelper.parseUTCtoAppTimezone(startStr.toString());
+    }
+    if (endStr.toString().isNotEmpty) {
+      _editEndTime = ISTHelper.parseUTCtoAppTimezone(endStr.toString());
+      if (_editEndTime != null) {
+        _selectedEndDate = DateTime(_editEndTime!.year, _editEndTime!.month, _editEndTime!.day);
+        _selectedEndTime = TimeOfDay(hour: _editEndTime!.hour, minute: _editEndTime!.minute);
+      }
+    }
+    if (completedStr.toString().isNotEmpty) {
+      _editCompletedEndTime = ISTHelper.parseUTCtoAppTimezone(completedStr.toString());
+    } else {
+      _editCompletedEndTime = _editEndTime;
+    }
+  }
+
+  Future<void> _pickEndDate() async {
+    final initial = _selectedEndDate ?? (_editStartTime ?? ISTHelper.now());
+    final firstDate = _editStartTime != null
+        ? DateTime(_editStartTime!.year, _editStartTime!.month, _editStartTime!.day)
+        : DateTime(2020);
+    final lastDate = _editCompletedEndTime != null
+        ? DateTime(_editCompletedEndTime!.year, _editCompletedEndTime!.month, _editCompletedEndTime!.day)
+        : ISTHelper.now();
+
+    final safeLast = lastDate.isBefore(firstDate) ? firstDate : lastDate;
+    final safeInitial = initial.isBefore(firstDate)
+        ? firstDate
+        : (initial.isAfter(safeLast) ? safeLast : initial);
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: safeInitial,
+      firstDate: firstDate,
+      lastDate: safeLast,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF3B82F6),
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _selectedEndDate = picked;
+      });
+    }
+  }
+
+  Future<void> _pickEndTime() async {
+    final initial = _selectedEndTime ?? TimeOfDay.now();
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF3B82F6),
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _selectedEndTime = picked;
+      });
     }
   }
 
   Future<void> _updateOnDuty() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
+    String? formattedEndTime;
+    if (_selectedEndTime != null) {
+      if (_selectedEndDate == null) {
+        showErrorDialog(context, 'Please select an end date.');
+        return;
+      }
+
+      final chosenDateTime = DateTime(
+        _selectedEndDate!.year,
+        _selectedEndDate!.month,
+        _selectedEndDate!.day,
+        _selectedEndTime!.hour,
+        _selectedEndTime!.minute,
+      );
+
+      // Validation 1: End time must be after start time
+      if (_editStartTime != null) {
+        final compareStart = DateTime(
+          _editStartTime!.year,
+          _editStartTime!.month,
+          _editStartTime!.day,
+          _editStartTime!.hour,
+          _editStartTime!.minute,
+        );
+        if (!chosenDateTime.isAfter(compareStart)) {
+          showErrorDialog(
+            context,
+            'End time must be after start time (${ISTHelper.formatDateTime(_editStartTime!)}).',
+          );
+          return;
+        }
+      }
+
+      // Validation 2: End time cannot be greater than completed end time
+      if (_editCompletedEndTime != null) {
+        final compareCompleted = DateTime(
+          _editCompletedEndTime!.year,
+          _editCompletedEndTime!.month,
+          _editCompletedEndTime!.day,
+          _editCompletedEndTime!.hour,
+          _editCompletedEndTime!.minute,
+          _editCompletedEndTime!.second,
+        );
+        if (chosenDateTime.isAfter(compareCompleted)) {
+          showErrorDialog(
+            context,
+            'End time cannot be greater than the end time already completed (${ISTHelper.formatDateTime(_editCompletedEndTime!)}).',
+          );
+          return;
+        }
+      }
+
+      final y = _selectedEndDate!.year.toString().padLeft(4, '0');
+      final m = _selectedEndDate!.month.toString().padLeft(2, '0');
+      final d = _selectedEndDate!.day.toString().padLeft(2, '0');
+      final hh = _selectedEndTime!.hour.toString().padLeft(2, '0');
+      final mm = _selectedEndTime!.minute.toString().padLeft(2, '0');
+      formattedEndTime = '$y-$m-$d $hh:$mm:00';
+    }
+
     setState(() => _isLoading = true);
     try {
       await Provider.of<AttendanceService>(context, listen: false).updateOnDutyDetails(
@@ -107,6 +273,8 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
         _clientController.text,
         _locationController.text,
         _purposeController.text,
+        _endLocationController.text,
+        endTime: formattedEndTime,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -143,6 +311,10 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
   }
 
   Future<void> _startOnDuty() async {
+    if (_isTodayHoliday) {
+      showErrorDialog(context, 'Today is a company holiday ($_todayHolidayName). On-duty visits cannot be started today.');
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     
     setState(() => _isLoading = true);
@@ -167,9 +339,13 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
   }
 
   Future<void> _endOnDuty() async {
+    if (_endLocationController.text.trim().isEmpty) {
+      showErrorDialog(context, 'Please enter End Location');
+      return;
+    }
     setState(() => _isLoading = true);
     try {
-      await Provider.of<AttendanceService>(context, listen: false).endOnDuty();
+      await Provider.of<AttendanceService>(context, listen: false).endOnDuty(_endLocationController.text.trim());
       setState(() {
         _isOnDuty = false;
         _startTime = null;
@@ -245,6 +421,34 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_isTodayHoliday && widget.existingLog == null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF59E0B)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.celebration, color: Color(0xFFB45309), size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Today is a company holiday ($_todayHolidayName). On-duty visits cannot be started today.',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF92400E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           TextFormField(
             controller: _clientController,
             decoration: InputDecoration(
@@ -265,7 +469,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
           TextFormField(
             controller: _locationController,
             decoration: InputDecoration(
-              labelText: 'Location',
+              labelText: 'Start Location',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -274,10 +478,29 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
               fillColor: Colors.grey.shade50,
             ),
             validator: (value) {
-              if (value == null || value.isEmpty) return 'Please enter location';
+              if (value == null || value.isEmpty) return 'Please enter start location';
               return null;
             },
           ),
+          if (widget.existingLog != null) ...[
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _endLocationController,
+              decoration: InputDecoration(
+                labelText: 'End Location',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                prefixIcon: const Icon(Icons.flag, color: Color(0xFF3B82F6)),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) return 'Please enter end location';
+                return null;
+              },
+            ),
+          ],
           const SizedBox(height: 16),
           TextFormField(
             controller: _purposeController,
@@ -295,9 +518,13 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
               return null;
             },
           ),
+          if (widget.existingLog != null) ...[
+            const SizedBox(height: 16),
+            _buildEndTimeEditor(),
+          ],
           const SizedBox(height: 24),
           ElevatedButton(
-            onPressed: _isLoading ? null : (widget.existingLog != null ? _updateOnDuty : _startOnDuty),
+            onPressed: (_isLoading || (_isTodayHoliday && widget.existingLog == null)) ? null : (widget.existingLog != null ? _updateOnDuty : _startOnDuty),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF3B82F6),
               foregroundColor: Colors.white,
@@ -322,6 +549,172 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEndTimeEditor() {
+    final completedTimeText = _editCompletedEndTime != null
+        ? ISTHelper.formatDateTime(_editCompletedEndTime!)
+        : null;
+
+    final dateText = _selectedEndDate != null
+        ? ISTHelper.formatDate(_selectedEndDate!)
+        : 'Select Date';
+
+    final timeText = _selectedEndTime != null
+        ? ISTHelper.formatTime(DateTime(2020, 1, 1, _selectedEndTime!.hour, _selectedEndTime!.minute))
+        : 'Select Time';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.schedule, size: 18, color: Color(0xFF3B82F6)),
+              SizedBox(width: 8),
+              Text(
+                'End Date & Time',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Forgot to complete on time? You can adjust the end time earlier than when it was completed.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+              height: 1.3,
+            ),
+          ),
+          if (completedTimeText != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                'Completed at: $completedTimeText',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF1D4ED8),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'End Date',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    InkWell(
+                      onTap: _pickEndDate,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                dateText,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.black87,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const Icon(Icons.calendar_today, size: 15, color: Color(0xFF3B82F6)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'End Time',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    InkWell(
+                      onTap: _pickEndTime,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                timeText,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.black87,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const Icon(Icons.access_time, size: 16, color: Color(0xFF3B82F6)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -404,7 +797,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Location',
+                                'Start Location',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.white.withOpacity(0.7),
@@ -526,6 +919,22 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
           const SizedBox(height: 24),
         ],
         
+        // End Location Input
+        TextFormField(
+          controller: _endLocationController,
+          decoration: InputDecoration(
+            labelText: 'End Location',
+            hintText: 'Enter end location to complete visit',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            prefixIcon: const Icon(Icons.flag, color: Color(0xFF3B82F6)),
+            filled: true,
+            fillColor: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 16),
+        
         // End Button
         ElevatedButton(
           onPressed: _isLoading ? null : _endOnDuty,
@@ -563,6 +972,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
     _clientController.dispose();
     _locationController.dispose();
     _purposeController.dispose();
+    _endLocationController.dispose();
     super.dispose();
   }
 }

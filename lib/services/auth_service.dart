@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../config/app_config.dart';
 import 'activity_logger.dart';
 import '../utils/ist_helper.dart';
+import '../utils/device_helper.dart';
 
 /// Creates an HTTP client that can handle self-signed SSL certificates
 http.Client _createHttpClient() {
@@ -26,6 +27,27 @@ class AuthConfirmationException implements Exception {
 class AuthSetupRequiredException implements Exception {
   final String message;
   AuthSetupRequiredException(this.message);
+  @override
+  String toString() => message;
+}
+
+class AuthDeclarationRequiredException implements Exception {
+  final String message;
+  AuthDeclarationRequiredException(this.message);
+  @override
+  String toString() => message;
+}
+
+class AuthPasswordSetupRequiredException implements Exception {
+  final String message;
+  AuthPasswordSetupRequiredException(this.message);
+  @override
+  String toString() => message;
+}
+
+class AuthDeviceViolationException implements Exception {
+  final String message;
+  AuthDeviceViolationException(this.message);
   @override
   String toString() => message;
 }
@@ -53,7 +75,65 @@ class AuthService with ChangeNotifier {
   String? _token;
   String? _userId;
   String? _userName;
+  String? _userEmail;
   int? _externalUserId; // userid from backend (null = WorkPulse-only user)
+  bool _mustChangePassword = false;
+  String? _currentPassword;
+  bool _canAccessAttendancePortal = false;
+  bool _isAttendanceModuleEnabled = true;
+  bool _isServiceAccount = false;
+  String? _workMode;
+  List<String> _hybridOfficeDays = [];
+
+  String get workMode => _workMode ?? 'Office';
+  List<String> get hybridOfficeDays => List.unmodifiable(_hybridOfficeDays);
+
+  bool get isAttendanceModuleEnabled => _isAttendanceModuleEnabled;
+
+  bool get isWfhToday {
+    final mode = (_workMode ?? 'Office').trim().toLowerCase();
+    if (mode == 'work from home' || mode == 'wfh') return true;
+    if (mode == 'office' || mode == 'regular') return false;
+    if (mode == 'hybrid') {
+      const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      final todayWeekday = weekdays[ISTHelper.now().weekday - 1];
+      final isOfficeDay = _hybridOfficeDays.any((d) {
+        final dayStr = d.trim().toLowerCase();
+        return dayStr == todayWeekday ||
+            (dayStr.length >= 3 && todayWeekday.startsWith(dayStr)) ||
+            (todayWeekday.length >= 3 && dayStr.startsWith(todayWeekday));
+      });
+      return !isOfficeDay;
+    }
+    return false;
+  }
+
+  void updateWorkMode(String mode, [List<String>? hybridDays]) async {
+    _workMode = mode;
+    if (hybridDays != null) {
+      _hybridOfficeDays = List<String>.from(hybridDays);
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.containsKey('userData')) {
+        final userData = json.decode(prefs.getString('userData')!);
+        userData['work_mode'] = _workMode;
+        userData['hybrid_office_days'] = _hybridOfficeDays;
+        await prefs.setString('userData', json.encode(userData));
+      }
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  bool get mustChangePassword {
+    return _mustChangePassword;
+  }
+
+  String? get currentPassword => _currentPassword;
+
+  void setCurrentPassword(String? password) {
+    _currentPassword = password;
+  }
 
   bool get isAuth {
     return _token != null;
@@ -63,9 +143,17 @@ class AuthService with ChangeNotifier {
     return _token;
   }
 
+  String? get userId => _userId;
+
   String? get userName {
     return _userName;
   }
+
+  String? get userEmail => _userEmail;
+
+  bool get canAccessAttendancePortal => _canAccessAttendancePortal;
+
+  bool get isServiceAccount => _isServiceAccount;
 
   // Check if user is WorkPulse-only (not synced from external system)
   bool get isWorkPulseOnlyUser {
@@ -74,50 +162,116 @@ class AuthService with ChangeNotifier {
 
   Future<bool> tryAutoLogin() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // 1. Check for fresh install or new build/version update
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      final currentBuild = '${packageInfo.version}+${packageInfo.buildNumber}';
+      final lastInstalledBuild = prefs.getString('last_installed_build');
+
+      // If opening for the first time after install or after updating to a new build,
+      // always force the user to see the login screen (do not auto-login).
+      if (lastInstalledBuild == null || lastInstalledBuild != currentBuild) {
+        print('New install or build change detected (stored: $lastInstalledBuild, current: $currentBuild). Showing login page.');
+        await prefs.setString('last_installed_build', currentBuild);
+        _token = null;
+        _userId = null;
+        _userName = null;
+        _userEmail = null;
+        _externalUserId = null;
+        _mustChangePassword = false;
+        _canAccessAttendancePortal = false;
+        _isServiceAccount = false;
+        _workMode = null;
+        _hybridOfficeDays = [];
+        await prefs.remove('userData');
+        await prefs.remove('token');
+        await prefs.remove('userId');
+        await prefs.remove('userName');
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      print('Error checking package info during auto-login: $e');
+    }
+
     if (!prefs.containsKey('token')) {
       return false;
     }
     _token = prefs.getString('token');
-    _userName = prefs.getString('userName') ?? 'User';
 
-    // Load userData to get externalUserId
+    // Load userData
     final userDataString = prefs.getString('userData');
     if (userDataString != null) {
-      final userData = json.decode(userDataString);
-      final rawExtId = userData['externalUserId'];
-      if (rawExtId != null) {
-        if (rawExtId is int) {
-          _externalUserId = rawExtId;
-        } else {
-          _externalUserId = int.tryParse(rawExtId.toString());
-        }
-      }
-    }
-
-      notifyListeners();
-
-      // Refresh settings using the token just in case public fetch failed or migration not run
       try {
-        final settings = await fetchGlobalSettings(token: _token);
-        if (settings != null) {
-          await ISTHelper.setTimezone(settings['application_timezone']!);
-          await ISTHelper.setFormatSettings(
-            settings['application_date_format']!,
-            settings['application_time_format']!,
-          );
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('leave_past_days_allowed', settings['leave_past_days_allowed'] ?? '0');
+        final userData = json.decode(userDataString);
+        final rawExtId = userData['externalUserId'];
+        if (rawExtId != null) {
+          if (rawExtId is int) {
+            _externalUserId = rawExtId;
+          } else {
+            _externalUserId = int.tryParse(rawExtId.toString());
+          }
+        }
+        _mustChangePassword = userData['mustChangePassword'] ?? false;
+        _canAccessAttendancePortal = userData['can_access_attendance_portal'] ?? false;
+        _isServiceAccount = userData['isServiceAccount'] ?? false;
+        _workMode = userData['work_mode']?.toString() ?? 'Office';
+        if (userData['hybrid_office_days'] is List) {
+          _hybridOfficeDays = (userData['hybrid_office_days'] as List).map((e) => e.toString()).toList();
+        } else {
+          _hybridOfficeDays = [];
+        }
+        _userEmail = userData['email'];
+        final storedName = userData['userName'] ?? prefs.getString('userName');
+        if (storedName != null && storedName.toString().trim().isNotEmpty) {
+          _userName = storedName.toString().trim();
+        } else {
+          _userName = null;
         }
       } catch (e) {
-        print('Error refreshing settings during auto-login: $e');
+        print('Error decoding userData in tryAutoLogin: $e');
+        _userName = prefs.getString('userName');
       }
+    } else {
+      _userName = prefs.getString('userName');
+    }
 
-      return true;
+    _userId = prefs.getString('userId');
+    _isAttendanceModuleEnabled = (prefs.getString('module_attendance_enabled') ?? 'true') != 'false';
+
+    notifyListeners();
+
+    // Refresh attendance terminal permission in background
+    if (_token != null) {
+      refreshAttendanceTerminalPermission();
+    }
+
+    // Refresh settings using the token just in case public fetch failed or migration not run
+    try {
+      final settings = await fetchGlobalSettings(token: _token);
+      if (settings != null) {
+        await ISTHelper.setTimezone(settings['application_timezone']!);
+        await ISTHelper.setFormatSettings(
+          settings['application_date_format']!,
+          settings['application_time_format']!,
+        );
+        await prefs.setString('leave_past_days_allowed', settings['leave_past_days_allowed'] ?? '0');
+        await prefs.setString('time_off_past_days_allowed', settings['time_off_past_days_allowed'] ?? '0');
+        await prefs.setString('office_start_time', settings['office_start_time'] ?? '09:30');
+        await prefs.setString('office_end_time', settings['office_end_time'] ?? '18:30');
+        final attEnabledStr = settings['module_attendance_enabled'] ?? 'true';
+        _isAttendanceModuleEnabled = attEnabledStr != 'false';
+        await prefs.setString('module_attendance_enabled', attEnabledStr);
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error refreshing settings during auto-login: $e');
+    }
+
+    return true;
   }
 
-  String? get _baseUrl {
-    return null; // Using AppConfig instead
-  }
 
   Future<void> login(String email, String password, {bool forceLocal = false}) async {
     final url = AppConfig.authSignIn;
@@ -130,7 +284,7 @@ class AuthService with ChangeNotifier {
     
     // Skip version check only in debug mode when using localhost
     // In release mode (isReleaseMode=true), always perform version check
-    final bool skipVersionCheck = !isReleaseMode && useLocalhost;
+    const bool skipVersionCheck = !isReleaseMode && useLocalhost;
     
     // Get current app version (only needed for release builds)
     String? appVersion;
@@ -146,16 +300,30 @@ class AuthService with ChangeNotifier {
       }
     }
     
-    print('Attempting login to: $url (Force Local: $forceLocal, App Version: ${appVersion ?? "skipped (dev mode)"}, Release: $isReleaseMode)');    final client = _createHttpClient();
+    print('Attempting login to: $url (Force Local: $forceLocal, App Version: ${appVersion ?? "skipped (dev mode)"}, Release: $isReleaseMode)');
+    final client = _createHttpClient();
     try {
+      final deviceId = await DeviceHelper.getDeviceId();
+      final deviceName = await DeviceHelper.getDeviceName();
+
       final response = await client.post(
         Uri.parse(url),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Client-Type': 'mobile-app',
+          'x-is-mobile': 'true',
+          'x-is-mobile-app': 'true',
+          'x-device-id': deviceId,
+          'x-device-name': deviceName,
+        },
         body: json.encode({
           'email': email,
           'password': password,
           'forceLocal': forceLocal,
           'is_mobile_app': true,
+          'client_type': 'mobile_app',
+          'deviceId': deviceId,
+          'deviceName': deviceName,
           if (appVersion != null) 'app_version': appVersion,
         }),
       );
@@ -179,26 +347,47 @@ class AuthService with ChangeNotifier {
       }
 
       if (response.statusCode != 200) {
-        throw Exception(responseData['message']);
+        if (responseData != null && responseData is Map && responseData['deviceViolation'] == true) {
+          throw AuthDeviceViolationException(responseData['message']?.toString() ?? 'Security Violation: Device Conflict');
+        }
+        if (responseData != null && responseData is Map && responseData['code'] == 'DECLARATION_REQUIRED') {
+          throw AuthDeclarationRequiredException(responseData['message'] ?? 'Declaration required');
+        }
+        if (responseData != null && responseData is Map && responseData['code'] == 'PASSWORD_SETUP_REQUIRED') {
+          throw AuthPasswordSetupRequiredException(responseData['message'] ?? 'Password setup required');
+        }
+        throw Exception(responseData['message'] ?? 'Login failed');
       }
 
       // Check for Setup Required (Role or Gender missing)
       final role = responseData['role'];
       final gender = responseData['gender'];
+      final canAccessAttendance = responseData['can_access_attendance_portal'] == true;
 
       // Helper to check if role/gender is invalid
       // Role: null or 0 means invalid
-      // Gender: null or empty string means invalid
+      // Gender: null or empty string means invalid (not required for attendance portal users)
       final isRoleInvalid = role == null || role == 0 || role == '0';
-      final isGenderInvalid = gender == null || gender == '';
+      final isGenderInvalid = (gender == null || gender == '') && !canAccessAttendance;
 
       if (isRoleInvalid || isGenderInvalid) {
          throw AuthSetupRequiredException("Setup Required");
       }
 
+      _currentPassword = password;
       _token = responseData['accessToken'];
       _userId = responseData['id'].toString();
+      _userEmail = responseData['email'] ?? email;
       _userName = '${responseData['firstname'] ?? ''} ${responseData['lastname'] ?? ''}'.trim();
+      _mustChangePassword = responseData['mustChangePassword'] ?? false;
+      _canAccessAttendancePortal = responseData['can_access_attendance_portal'] == true;
+      _isServiceAccount = responseData['isServiceAccount'] == true;
+      _workMode = responseData['work_mode']?.toString() ?? 'Office';
+      if (responseData['hybrid_office_days'] is List) {
+        _hybridOfficeDays = (responseData['hybrid_office_days'] as List).map((e) => e.toString()).toList();
+      } else {
+        _hybridOfficeDays = [];
+      }
       
       final rawExtId = responseData['userid'];
       if (rawExtId != null) {
@@ -216,11 +405,24 @@ class AuthService with ChangeNotifier {
         'token': _token,
         'userId': _userId,
         'userName': _userName,
+        'email': _userEmail,
         'externalUserId': _externalUserId,
+        'mustChangePassword': _mustChangePassword,
+        'can_access_attendance_portal': _canAccessAttendancePortal,
+        'isServiceAccount': _isServiceAccount,
+        'work_mode': _workMode,
+        'hybrid_office_days': _hybridOfficeDays,
       });
-      prefs.setString('userData', userData);
-      prefs.setString('token', _token!);
-      prefs.setString('userId', _userId!);
+      await prefs.setString('userData', userData);
+      await prefs.setString('token', _token!);
+      await prefs.setString('userId', _userId!);
+      if (_userName != null && _userName!.trim().isNotEmpty) {
+        await prefs.setString('userName', _userName!.trim());
+      }
+      try {
+        final packageInfo = await PackageInfo.fromPlatform();
+        await prefs.setString('last_installed_build', '${packageInfo.version}+${packageInfo.buildNumber}');
+      } catch (_) {}
 
       // Fetch and store global settings immediately after login
       try {
@@ -232,6 +434,12 @@ class AuthService with ChangeNotifier {
             settings['application_time_format']!,
           );
           await prefs.setString('leave_past_days_allowed', settings['leave_past_days_allowed'] ?? '0');
+          await prefs.setString('time_off_past_days_allowed', settings['time_off_past_days_allowed'] ?? '0');
+          await prefs.setString('office_start_time', settings['office_start_time'] ?? '09:30');
+          await prefs.setString('office_end_time', settings['office_end_time'] ?? '18:30');
+          final attEnabledStr = settings['module_attendance_enabled'] ?? 'true';
+          _isAttendanceModuleEnabled = attEnabledStr != 'false';
+          await prefs.setString('module_attendance_enabled', attEnabledStr);
         }
       } catch (e) {
         print('Error fetching settings during login: $e');
@@ -241,6 +449,16 @@ class AuthService with ChangeNotifier {
       await ActivityLogger.logLogin(_userName ?? 'User');
       
       notifyListeners();
+    } on SocketException catch (error) {
+      print('Network Error: $error');
+      throw Exception('Unable to connect to server. Please verify that the backend server is running and reachable.');
+    } on http.ClientException catch (error) {
+      print('HTTP Client Error: $error');
+      final msg = error.message.toLowerCase();
+      if (msg.contains('connection refused') || error.toString().toLowerCase().contains('connection refused') || error.toString().toLowerCase().contains('socketexception')) {
+        throw Exception('Unable to connect to server. Please ensure the backend server is running.');
+      }
+      throw Exception('Network error: ${error.message}');
     } catch (error) {
       print('Login Error: $error');
       rethrow;
@@ -252,19 +470,26 @@ class AuthService with ChangeNotifier {
     final token = _token;
 
     _token = null;
+    _currentPassword = null;
     _userId = null;
     _userName = null;
+    _userEmail = null;
     _externalUserId = null;
+    _mustChangePassword = false;
+    _canAccessAttendancePortal = false;
+    _isServiceAccount = false;
     
     final prefs = await SharedPreferences.getInstance();
-    prefs.remove('userData');
-    prefs.remove('token');
-    prefs.remove('userId');
+    await prefs.remove('userData');
+    await prefs.remove('token');
+    await prefs.remove('userId');
+    await prefs.remove('userName');
     
     // Call backend logout endpoint to log activity server-side
     if (token != null) {
       try {
-        await http.post(
+        final client = _createHttpClient();
+        await client.post(
           Uri.parse('${AppConfig.apiBaseUrl}/api/auth/logout'),
           headers: {
             'Content-Type': 'application/json',
@@ -280,6 +505,92 @@ class AuthService with ChangeNotifier {
     await ActivityLogger.logLogout(userName);
 
     notifyListeners();
+  }
+
+  /// Check and refresh Attendance Terminal permission from backend
+  Future<bool> refreshAttendanceTerminalPermission() async {
+    if (_token == null) return false;
+    try {
+      final client = _createHttpClient();
+      final response = await client.get(
+        Uri.parse(AppConfig.terminalStatus),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': _token!,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final bool allowed = data['can_access_attendance_portal'] == true;
+        if (_canAccessAttendancePortal != allowed) {
+          _canAccessAttendancePortal = allowed;
+          
+          final prefs = await SharedPreferences.getInstance();
+          final userDataString = prefs.getString('userData');
+          if (userDataString != null) {
+            try {
+              final userData = json.decode(userDataString) as Map<String, dynamic>;
+              userData['can_access_attendance_portal'] = allowed;
+              await prefs.setString('userData', json.encode(userData));
+            } catch (_) {}
+          }
+          notifyListeners();
+        }
+        return allowed;
+      }
+    } catch (e) {
+      print('Error refreshing attendance terminal permission: $e');
+    }
+    return _canAccessAttendancePortal;
+  }
+
+  /// Backward compatibility alias
+  Future<bool> refreshFaceAttendancePermission() => refreshAttendanceTerminalPermission();
+
+  void setMustChangePassword(bool value) async {
+    _mustChangePassword = value;
+    final prefs = await SharedPreferences.getInstance();
+    final userDataString = prefs.getString('userData');
+    if (userDataString != null) {
+      try {
+        final userData = json.decode(userDataString) as Map<String, dynamic>;
+        userData['mustChangePassword'] = value;
+        prefs.setString('userData', json.encode(userData));
+      } catch (e) {
+        print('Error updating mustChangePassword in prefs: $e');
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Request temporary password via email
+  Future<String> forgotPassword(String email) async {
+    final url = AppConfig.authForgotPassword;
+    final client = _createHttpClient();
+
+    try {
+      final response = await client.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'email': email.trim(),
+        }),
+      );
+
+      final data = json.decode(response.body);
+      if (response.statusCode == 200) {
+        return data['message'] ?? 'A temporary password has been sent to your email address.';
+      } else {
+        throw Exception(data['message'] ?? 'Failed to send temporary password.');
+      }
+    } on SocketException catch (_) {
+      throw Exception('Unable to connect to server. Please verify network connection.');
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception(e.toString());
+    }
   }
 
   /// Fetch application global settings from settings endpoint
@@ -307,6 +618,10 @@ class AuthService with ChangeNotifier {
             'application_date_format': data['map']['application_date_format']?.toString() ?? 'MMM DD, YYYY',
             'application_time_format': data['map']['application_time_format']?.toString() ?? '12h',
             'leave_past_days_allowed': data['map']['leave_past_days_allowed']?.toString() ?? '0',
+            'time_off_past_days_allowed': data['map']['time_off_past_days_allowed']?.toString() ?? '0',
+            'office_start_time': data['map']['office_start_time']?.toString() ?? '09:30',
+            'office_end_time': data['map']['office_end_time']?.toString() ?? '18:30',
+            'module_attendance_enabled': data['map']['module_attendance_enabled']?.toString() ?? 'true',
           };
         }
       }
@@ -314,5 +629,24 @@ class AuthService with ChangeNotifier {
       print('Error fetching global settings (authenticated: ${token != null}): $error');
     }
     return null; 
+  }
+
+  /// Manually refresh global settings from backend
+  Future<void> refreshGlobalSettings() async {
+    try {
+      final settings = await fetchGlobalSettings(token: _token);
+      if (settings != null) {
+        final attEnabledStr = settings['module_attendance_enabled'] ?? 'true';
+        final bool isEnabled = attEnabledStr != 'false';
+        if (_isAttendanceModuleEnabled != isEnabled) {
+          _isAttendanceModuleEnabled = isEnabled;
+          notifyListeners();
+        }
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('module_attendance_enabled', attEnabledStr);
+      }
+    } catch (e) {
+      print('Error refreshing global settings: $e');
+    }
   }
 }

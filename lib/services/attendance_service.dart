@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
 import '../config/app_config.dart';
 import 'activity_logger.dart';
+import '../utils/device_helper.dart';
 
 /// Creates an HTTP client that can handle self-signed SSL certificates
 http.Client _createHttpClient() {
@@ -275,6 +276,47 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
+  /// Fetch active company holidays
+  Future<List<Map<String, dynamic>>> getHolidays({int? year, int status = 1}) async {
+    String url = '${AppConfig.holidays}?status=$status';
+    if (year != null) {
+      url += '&year=$year';
+    }
+    try {
+      final response = await _client.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'x-access-token': token!,
+        },
+      );
+      if (response.statusCode != 200) {
+        return [];
+      }
+      final decoded = json.decode(response.body);
+      if (decoded is List) {
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      return [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  /// Returns a map of 'YYYY-MM-DD' -> holiday name
+  Future<Map<String, String>> getHolidaysMap({int? year}) async {
+    final list = await getHolidays(year: year);
+    final map = <String, String>{};
+    for (final h in list) {
+      final dateVal = (h['holiday_date'] ?? h['date'])?.toString();
+      if (dateVal != null) {
+        final dStr = dateVal.split('T')[0];
+        map[dStr] = (h['holiday_name'] ?? h['name'] ?? 'Holiday').toString();
+      }
+    }
+    return map;
+  }
+
   Future<void> updateLeave(int id, String leaveType, DateTime startDate, DateTime endDate, String reason, {bool isHalfDay = false}) async {
     final url = '${AppConfig.leaveDetail}/$id';
     final DateFormat formatter = DateFormat('yyyy-MM-dd');
@@ -448,7 +490,7 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
-  Future<void> endOnDuty() async {
+  Future<void> endOnDuty(String endLocation) async {
     final url = AppConfig.onDutyEnd;
     try {
       // Get current location
@@ -483,6 +525,7 @@ class AttendanceService with ChangeNotifier {
           'x-access-token': token!,
         },
         body: json.encode({
+          'end_location': endLocation,
           'latitude': position?.latitude.toString() ?? '0.0',
           'longitude': position?.longitude.toString() ?? '0.0',
         }),
@@ -519,24 +562,44 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
-  Future<void> updateOnDutyDetails(int id, String clientName, String location, String purpose) async {
+  Future<void> updateOnDutyDetails(
+    int id,
+    String clientName,
+    String location,
+    String purpose,
+    String endLocation, {
+    String? endTime,
+  }) async {
     final url = '${AppConfig.onDutyDetail}/$id';
     try {
+      final Map<String, dynamic> body = {
+        'client_name': clientName,
+        'location': location,
+        'purpose': purpose,
+        'end_location': endLocation,
+      };
+      if (endTime != null && endTime.isNotEmpty) {
+        body['end_time'] = endTime;
+      }
+
       final response = await _client.put(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
           'x-access-token': token!,
         },
-        body: json.encode({
-          'client_name': clientName,
-          'location': location,
-          'purpose': purpose,
-        }),
+        body: json.encode(body),
       );
 
       if (response.statusCode != 200) {
-        throw Exception('Failed to update on-duty details');
+        String msg = 'Failed to update on-duty details';
+        try {
+          final resData = json.decode(response.body);
+          if (resData['message'] != null) {
+            msg = resData['message'];
+          }
+        } catch (_) {}
+        throw Exception(msg);
       }
       notifyListeners();
     } catch (error) {
@@ -607,5 +670,325 @@ class AttendanceService with ChangeNotifier {
     } catch (error) {
       rethrow;
     }
+  }
+
+  /// Fetch today's attendance status for the specified employee email
+  Future<Map<String, dynamic>> getTodayAttendanceStatus(String email) async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final url = '${AppConfig.attendanceStatus}/${Uri.encodeComponent(email)}';
+    try {
+      final response = await _client.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to fetch attendance status: ${response.statusCode}');
+      }
+      return json.decode(response.body);
+    } catch (error) {
+      rethrow;
+    }
+  }
+
+  /// Fetch current user's today attendance status (including checkedIn, hasCheckIn, hasCheckOut)
+  Future<Map<String, dynamic>> getMyTodayAttendance() async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final url = AppConfig.todayAttendance;
+    try {
+      final response = await _client.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+      );
+      if (response.statusCode != 200) {
+        throw Exception('Failed to fetch today attendance: ${response.statusCode}');
+      }
+      return json.decode(response.body);
+    } catch (error) {
+      rethrow;
+    }
+  }
+
+  /// Fetch all dates on which current user has recorded check-ins
+  Future<List<String>> getMyAttendedDates() async {
+    if (token == null) {
+      return [];
+    }
+    final url = AppConfig.myAttendedDates;
+    try {
+      final response = await _client.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+      );
+      if (response.statusCode != 200) {
+        return [];
+      }
+      final data = json.decode(response.body);
+      final List<dynamic> dates = data['attendedDates'] ?? [];
+      return dates.map((e) => e.toString()).toList();
+    } catch (error) {
+      return [];
+    }
+  }
+
+  /// Fetch kiosk terminal status for the currently authenticated user
+  Future<Map<String, dynamic>> getTerminalStatus() async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final url = AppConfig.terminalStatus;
+    try {
+      final response = await _client.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to fetch terminal status: ${response.statusCode}');
+      }
+      return json.decode(response.body);
+    } catch (error) {
+      rethrow;
+    }
+  }
+
+  /// Backward compatibility alias
+  Future<Map<String, dynamic>> getFaceStatus() => getTerminalStatus();
+
+  /// Fetch list of all active staff members for the attendance kiosk terminal
+  Future<List<Map<String, dynamic>>> getStaffList() async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final url = AppConfig.attendanceStaffList;
+    try {
+      final response = await _client.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to fetch staff list: ${response.statusCode}');
+      }
+      final decoded = json.decode(response.body);
+      if (decoded is List) {
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      return [];
+    } catch (error) {
+      rethrow;
+    }
+  }
+
+  /// Record check-in or check-out for an employee via the in-app kiosk terminal
+  Future<Map<String, dynamic>> recordKioskAttendance({
+    required String email,
+    required String action,
+    double? latitude,
+    double? longitude,
+    String? phoneModel,
+  }) async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final url = AppConfig.attendanceKioskRecord;
+    try {
+      final response = await _client.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-access-token': token!,
+        },
+        body: json.encode({
+          'email': email,
+          'action': action,
+          'latitude': latitude?.toString(),
+          'longitude': longitude?.toString(),
+          'phone_model': phoneModel ?? 'WorkPulse Mobile Kiosk',
+        }),
+      );
+
+      final responseBody = json.decode(response.body);
+      if (response.statusCode != 200) {
+        throw Exception(responseBody['message'] ?? 'Failed to record attendance');
+      }
+
+      notifyListeners();
+      return Map<String, dynamic>.from(responseBody);
+    } catch (error) {
+      rethrow;
+    }
+  }
+
+
+  /// Fetch dynamic signed QR badge data for the logged-in employee
+  Future<Map<String, dynamic>> getMyAttendanceBadge() async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final deviceId = await DeviceHelper.getDeviceId();
+    final deviceName = await DeviceHelper.getDeviceName();
+
+    final uri = Uri.parse(AppConfig.myAttendanceBadge).replace(queryParameters: {
+      'deviceId': deviceId,
+      'deviceName': deviceName,
+    });
+
+    final response = await _client
+        .get(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': token!,
+            'x-is-mobile': 'true',
+            'x-is-mobile-app': 'true',
+            'x-device-id': deviceId,
+            'x-device-name': deviceName,
+          },
+        )
+        .timeout(const Duration(seconds: 15));
+
+    final responseBody = _decodeJsonObject(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(responseBody['message'] ?? 'Failed to load employee badge (${response.statusCode})');
+    }
+    return responseBody;
+  }
+
+  /// Scan dynamic QR badge at terminal kiosk to preview or confirm check-in/check-out
+  Future<Map<String, dynamic>> scanQrBadgeAttendance({
+    String? qrPayload,
+    String? confirmationToken,
+    bool? confirmed,
+    double? latitude,
+    double? longitude,
+    String? phoneModel,
+  }) async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final response = await _client
+        .post(
+          Uri.parse(AppConfig.scanQrBadgeAttendance),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': token!,
+          },
+          body: json.encode({
+            if (qrPayload != null) 'qrPayload': qrPayload,
+            if (confirmationToken != null) 'confirmationToken': confirmationToken,
+            if (confirmed != null) 'confirmed': confirmed,
+            if (latitude != null) 'latitude': latitude.toString(),
+            if (longitude != null) 'longitude': longitude.toString(),
+            'phone_model': phoneModel ?? 'WorkPulse Mobile Kiosk',
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    final responseBody = _decodeJsonObject(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(responseBody['message'] ?? 'Badge scan failed (${response.statusCode})');
+    }
+    notifyListeners();
+    return responseBody;
+  }
+
+  /// Fetch current user's WFH attendance status, work mode info, and today's punch state
+  Future<Map<String, dynamic>> getWfhStatus() async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final deviceId = await DeviceHelper.getDeviceId();
+    final deviceName = await DeviceHelper.getDeviceName();
+
+    final uri = Uri.parse(AppConfig.wfhStatus);
+
+    final response = await _client
+        .get(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': token!,
+            'x-is-mobile': 'true',
+            'x-is-mobile-app': 'true',
+            'x-device-id': deviceId,
+            'x-device-name': deviceName,
+          },
+        )
+        .timeout(const Duration(seconds: 15));
+
+    final responseBody = _decodeJsonObject(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(responseBody['message'] ?? 'Failed to load WFH status (${response.statusCode})');
+    }
+    return responseBody;
+  }
+
+  /// Record WFH Attendance Check-In or Check-Out punch with GPS coordinates & device binding
+  Future<Map<String, dynamic>> wfhPunch({
+    required String action,
+    double? latitude,
+    double? longitude,
+    String? notes,
+  }) async {
+    if (token == null) {
+      throw Exception('Not authenticated');
+    }
+    final deviceId = await DeviceHelper.getDeviceId();
+    final deviceName = await DeviceHelper.getDeviceName();
+
+    final response = await _client
+        .post(
+          Uri.parse(AppConfig.wfhPunch),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': token!,
+            'x-is-mobile': 'true',
+            'x-is-mobile-app': 'true',
+            'x-device-id': deviceId,
+            'x-device-name': deviceName,
+          },
+          body: json.encode({
+            'action': action,
+            if (latitude != null) 'latitude': latitude,
+            if (longitude != null) 'longitude': longitude,
+            if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    final responseBody = _decodeJsonObject(response.body);
+    if (response.statusCode != 200) {
+      throw Exception(responseBody['message'] ?? 'WFH punch failed (${response.statusCode})');
+    }
+    notifyListeners();
+    return responseBody;
+  }
+
+  Map<String, dynamic> _decodeJsonObject(String body) {
+    try {
+      final decoded = json.decode(body);
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    return <String, dynamic>{};
   }
 }
