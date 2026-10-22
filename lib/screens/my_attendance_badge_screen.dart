@@ -314,7 +314,7 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
     _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) => updateElapsed());
   }
 
-  Future<void> _handleWfhPunch(String action) async {
+  Future<void> _handleWfhPunch(String action, {bool cancelTimeOff = false}) async {
     if (!mounted) return;
     setState(() => _isPunching = true);
 
@@ -358,6 +358,7 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
         latitude: _latitude,
         longitude: _longitude,
         notes: _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null,
+        cancelTimeOff: cancelTimeOff,
       );
 
       if (!mounted) return;
@@ -409,6 +410,353 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
     } finally {
       if (mounted) setState(() => _isPunching = false);
     }
+  }
+
+  /// Interactive Modal Prompt shown when user attempts Check-In while having scheduled time-off
+  Future<void> _showScheduledTimeOffDialog(Map<String, dynamic> timeOff) async {
+    final String timeRange = timeOff['timeRange']?.toString() ??
+        '${timeOff['formattedStartTime'] ?? timeOff['start_time']} – ${timeOff['formattedEndTime'] ?? timeOff['end_time']}';
+    final String status = timeOff['status']?.toString() ?? 'Approved';
+    final String? reason = timeOff['reason']?.toString();
+
+    HapticFeedback.selectionClick();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF1E293B),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border(
+              top: BorderSide(color: Color(0xFF475569), width: 1.5),
+            ),
+          ),
+          padding: EdgeInsets.fromLTRB(
+            22,
+            16,
+            22,
+            MediaQuery.of(ctx).padding.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Drag handle
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF64748B),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+
+              // Icon & Title
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: const Icon(Icons.schedule_rounded, color: Color(0xFFFBBF24), size: 24),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Scheduled Time-Off Detected',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'You have time-off scheduled for today',
+                          style: TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Time-Off Detail Card
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF334155)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.calendar_today_rounded, size: 14, color: Color(0xFF38BDF8)),
+                            SizedBox(width: 6),
+                            Text(
+                              'Time-Off Window',
+                              style: TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: status == 'Approved'
+                                ? const Color(0xFF10B981).withValues(alpha: 0.2)
+                                : const Color(0xFFF59E0B).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: status == 'Approved'
+                                  ? const Color(0xFF10B981).withValues(alpha: 0.4)
+                                  : const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: Text(
+                            status,
+                            style: TextStyle(
+                              color: status == 'Approved' ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      timeRange,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        fontFamily: 'monospace',
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    if (reason != null && reason.trim().isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '"$reason"',
+                        style: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              const Text(
+                'Since you are checking in early, please choose an option:',
+                style: TextStyle(
+                  color: Color(0xFFCBD5E1),
+                  fontSize: 12,
+                  height: 1.3,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 14),
+
+              // Option 1: Cancel Time-Off & Check In
+              InkWell(
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _handleWfhPunch('CHECK_IN', cancelTimeOff: true);
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF065F46).withValues(alpha: 0.25),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFF10B981), width: 1.5),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.check_rounded, color: Colors.white, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Text(
+                                  'Cancel Time-Off & Check In',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF10B981).withValues(alpha: 0.25),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Text(
+                                    'Preserves Quota',
+                                    style: TextStyle(
+                                      color: Color(0xFF34D399),
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            const Text(
+                              'Working regular hours. Cancels request and preserves monthly quota.',
+                              style: TextStyle(
+                                color: Color(0xFFA7F3D0),
+                                fontSize: 11,
+                                height: 1.25,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // Option 2: Keep Time-Off & Check In
+              InkWell(
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _handleWfhPunch('CHECK_IN', cancelTimeOff: false);
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFF475569)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF38BDF8).withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.schedule_rounded, color: Color(0xFF38BDF8), size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Text(
+                                  'Keep Time-Off & Check In',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF64748B).withValues(alpha: 0.3),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Text(
+                                    'Step Out Later',
+                                    style: TextStyle(
+                                      color: Color(0xFFCBD5E1),
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'Checking in early now, but stepping out during $timeRange.',
+                              style: const TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 11,
+                                height: 1.25,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Dismiss
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF94A3B8),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                child: const Text(
+                  'Cancel / Go Back',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _fetchBadge({bool silent = false}) async {
@@ -468,6 +816,12 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
         final bool isHoliday = response['isHoliday'] == true || badge['isHoliday'] == true || todayStatus == 'HOLIDAY';
         final String? holidayName = response['holidayName']?.toString() ?? badge['holidayName']?.toString();
 
+        final todayTimeOff = (response['todayTimeOff'] is Map)
+            ? Map<String, dynamic>.from(response['todayTimeOff'])
+            : ((badge['todayTimeOff'] is Map)
+                ? Map<String, dynamic>.from(badge['todayTimeOff'])
+                : null);
+
         final badgeData = <String, dynamic>{
           'staffId': emp['staffId'] ?? badge['staffId'] ?? response['staffId'],
           'name': emp['name'] ?? badge['name'] ?? response['name'],
@@ -479,6 +833,7 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
           'checkInTime': checkInTime,
           'checkOutTime': checkOutTime,
           'checkInIso': checkInIso,
+          'todayTimeOff': todayTimeOff,
           'isHoliday': isHoliday,
           'holidayName': holidayName,
           'qrPayload': qr,
@@ -641,7 +996,7 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444).withOpacity(0.12),
+                    color: const Color(0xFFEF4444).withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.block_rounded, size: 64, color: Color(0xFFEF4444)),
@@ -700,6 +1055,9 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
     final checkOutTime = _badgeData?['checkOutTime']?.toString();
     final bool isHoliday = _badgeData?['isHoliday'] == true || todayStatus == 'HOLIDAY';
     final String holidayName = _badgeData?['holidayName']?.toString() ?? 'Company Holiday';
+    final Map<String, dynamic>? todayTimeOff = _badgeData?['todayTimeOff'] is Map
+        ? Map<String, dynamic>.from(_badgeData!['todayTimeOff'])
+        : null;
 
     final statusColor = _getStatusColor(todayStatus);
     final bool isViewingWfh = _isWfhDay;
@@ -1064,13 +1422,106 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                               const SizedBox(height: 16),
                             ],
 
+                            // Scheduled Time-Off Banner Notice (WFH View)
+                            if (todayStatus == 'NOT_CHECKED_IN' && todayTimeOff != null) ...[
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(Icons.schedule_rounded, color: Color(0xFFFBBF24), size: 20),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text(
+                                                'Scheduled Time-Off Today',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: Text(
+                                                  todayTimeOff['status']?.toString() ?? 'Approved',
+                                                  style: const TextStyle(
+                                                    color: Color(0xFFFBBF24),
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            todayTimeOff['timeRange']?.toString() ?? '',
+                                            style: const TextStyle(
+                                              color: Color(0xFFFDE68A),
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w800,
+                                              fontFamily: 'monospace',
+                                            ),
+                                          ),
+                                          if (todayTimeOff['reason'] != null && todayTimeOff['reason'].toString().isNotEmpty) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '"${todayTimeOff['reason']}"',
+                                              style: const TextStyle(
+                                                color: Color(0xFFCBD5E1),
+                                                fontSize: 11,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            ),
+                                          ],
+                                          const SizedBox(height: 4),
+                                          const Text(
+                                            'Tap Check In to choose whether to keep or cancel this time-off.',
+                                            style: TextStyle(
+                                              color: Color(0xFF94A3B8),
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                            ],
+
                             // Action Button: Clean Check In / Check Out
                             if (todayStatus == 'NOT_CHECKED_IN')
                               SizedBox(
                                 width: double.infinity,
                                 height: 52,
                                 child: ElevatedButton(
-                                  onPressed: _isPunching ? null : () => _handleWfhPunch('CHECK_IN'),
+                                  onPressed: _isPunching
+                                      ? null
+                                      : () {
+                                          if (todayTimeOff != null) {
+                                            _showScheduledTimeOffDialog(todayTimeOff);
+                                          } else {
+                                            _handleWfhPunch('CHECK_IN');
+                                          }
+                                        },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF10B981),
                                     foregroundColor: Colors.white,
@@ -1283,6 +1734,89 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                             ),
                           ] else ...[
                             // ─── OFFICE DYNAMIC QR CODE VIEW (OFFICE DAYS ONLY) ───
+                            if (todayStatus == 'NOT_CHECKED_IN' && todayTimeOff != null) ...[
+                              Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(bottom: 16),
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(Icons.schedule_rounded, color: Color(0xFFFBBF24), size: 20),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text(
+                                                'Scheduled Time-Off Today',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: Text(
+                                                  todayTimeOff['status']?.toString() ?? 'Approved',
+                                                  style: const TextStyle(
+                                                    color: Color(0xFFFBBF24),
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            todayTimeOff['timeRange']?.toString() ?? '',
+                                            style: const TextStyle(
+                                              color: Color(0xFFFDE68A),
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w800,
+                                              fontFamily: 'monospace',
+                                            ),
+                                          ),
+                                          if (todayTimeOff['reason'] != null && todayTimeOff['reason'].toString().isNotEmpty) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '"${todayTimeOff['reason']}"',
+                                              style: const TextStyle(
+                                                color: Color(0xFFCBD5E1),
+                                                fontSize: 11,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            ),
+                                          ],
+                                          const SizedBox(height: 4),
+                                          const Text(
+                                            'When scanning at the kiosk, you will be prompted to keep or cancel your time-off.',
+                                            style: TextStyle(
+                                              color: Color(0xFF94A3B8),
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(

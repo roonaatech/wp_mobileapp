@@ -515,14 +515,19 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
           _statusMessage = 'Confirmation required';
         });
 
-        final confirmed = await _showConfirmationDialog(
+        final todayTimeOff = result['todayTimeOff'] != null
+            ? Map<String, dynamic>.from(result['todayTimeOff'] as Map)
+            : null;
+
+        final confirmChoice = await _showConfirmationDialog(
           action: action,
           employeeName: employeeName,
           timestamp: timestamp,
           duration: duration,
+          todayTimeOff: todayTimeOff,
         );
 
-        if (!confirmed) {
+        if (confirmChoice == null || confirmChoice['confirmed'] != true) {
           setState(() {
             _isRecordingAttendance = false;
             _statusMessage = '${action == 'CHECK_IN' ? 'Check-In' : 'Check-Out'} cancelled';
@@ -537,6 +542,8 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
           return;
         }
 
+        final bool cancelTimeOff = confirmChoice['cancelTimeOff'] == true;
+
         // Confirmed by user -> execute attendance record
         setState(() {
           _isRecordingAttendance = true;
@@ -546,6 +553,7 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
         final confirmResult = await attendanceService.scanQrBadgeAttendance(
           confirmationToken: confirmationToken,
           confirmed: true,
+          cancelTimeOff: cancelTimeOff,
           latitude: position?.latitude,
           longitude: position?.longitude,
           phoneModel: phoneModel,
@@ -646,17 +654,19 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
     return 'WorkPulse Mobile Kiosk';
   }
 
-  Future<bool> _showConfirmationDialog({
+  Future<Map<String, dynamic>?> _showConfirmationDialog({
     required String action,
     required String employeeName,
     required String timestamp,
     String? duration,
+    Map<String, dynamic>? todayTimeOff,
   }) async {
     final isCheckIn = action == 'CHECK_IN';
     final actionLabel = isCheckIn ? 'Check In' : 'Check Out';
     final accentColor = isCheckIn ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
+    final hasTimeOff = isCheckIn && todayTimeOff != null;
 
-    final countdownNotifier = ValueNotifier<int>(15);
+    final countdownNotifier = ValueNotifier<int>(30);
     Timer? dialogTimer;
 
     dialogTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -665,12 +675,12 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
       } else {
         timer.cancel();
         if (mounted && Navigator.of(context).canPop()) {
-          Navigator.of(context).pop(false);
+          Navigator.of(context).pop({'confirmed': false});
         }
       }
     });
 
-    final confirmed = await showDialog<bool>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => Dialog(
@@ -829,7 +839,78 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
+
+              // Scheduled Time-Off Notice (if applicable)
+              if (hasTimeOff) ...[
+                Container(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.schedule_rounded, size: 16, color: Color(0xFFF59E0B)),
+                          const SizedBox(width: 6),
+                          const Expanded(
+                            child: Text(
+                              'Scheduled Time-Off Active',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFF59E0B),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              todayTimeOff['status']?.toString().toUpperCase() ?? 'APPROVED',
+                              style: const TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFFFBBF24),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Time-off slot: ${todayTimeOff['timeRange'] ?? '${todayTimeOff['start_time']} – ${todayTimeOff['end_time']}'}',
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Checking in early? Cancel to preserve your monthly quota, or keep it to step out later.',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 10.5,
+                          color: Color(0xFFCBD5E1),
+                          height: 1.25,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
               // Auto-cancel countdown hint
               ValueListenableBuilder<int>(
@@ -848,78 +929,211 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
               ),
               const SizedBox(height: 14),
 
-              // Action Buttons: NO / YES
-              Row(
-                children: [
-                  // NO Button
-                  Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFF475569), width: 1.5),
-                        backgroundColor: const Color(0xFF1E293B),
-                        foregroundColor: const Color(0xFF94A3B8),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      onPressed: () {
-                        dialogTimer?.cancel();
-                        Navigator.of(ctx).pop(false);
-                      },
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.close_rounded, size: 18, color: Color(0xFFEF4444)),
-                          SizedBox(width: 6),
-                          Text(
-                            'NO',
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14,
-                              color: Colors.white70,
+              // Action Buttons:
+              if (hasTimeOff) ...[
+                // Option 1: Cancel Time-Off & Check In
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      elevation: 4,
+                    ),
+                    onPressed: () {
+                      dialogTimer?.cancel();
+                      Navigator.of(ctx).pop({'confirmed': true, 'cancelTimeOff': true});
+                    },
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_circle_outline_rounded, size: 18),
+                            SizedBox(width: 6),
+                            Text(
+                              'Cancel Time-Off & Check In',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                              ),
                             ),
+                          ],
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Preserves Monthly Quota',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 10,
+                            color: Color(0xFFA7F3D0),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 12),
+                ),
+                const SizedBox(height: 8),
 
-                  // YES Button
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: accentColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        elevation: 4,
-                        shadowColor: accentColor.withValues(alpha: 0.5),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      onPressed: () {
-                        dialogTimer?.cancel();
-                        Navigator.of(ctx).pop(true);
-                      },
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.check_rounded, size: 20, color: Colors.white),
-                          SizedBox(width: 6),
-                          Text(
-                            'YES',
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14,
-                              color: Colors.white,
+                // Option 2: Keep Time-Off & Check In
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2563EB),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      elevation: 4,
+                    ),
+                    onPressed: () {
+                      dialogTimer?.cancel();
+                      Navigator.of(ctx).pop({'confirmed': true, 'cancelTimeOff': false});
+                    },
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.schedule_rounded, size: 18),
+                            SizedBox(width: 6),
+                            Text(
+                              'Keep Time-Off & Check In',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                              ),
                             ),
+                          ],
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Step Out Later',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 10,
+                            color: Color(0xFFBFDBFE),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 8),
+
+                // Option 3: Cancel / Don't Check In
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF475569), width: 1.5),
+                      backgroundColor: const Color(0xFF1E293B),
+                      foregroundColor: const Color(0xFF94A3B8),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: () {
+                      dialogTimer?.cancel();
+                      Navigator.of(ctx).pop({'confirmed': false});
+                    },
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.close_rounded, size: 16, color: Color(0xFFEF4444)),
+                        SizedBox(width: 6),
+                        Text(
+                          "Don't Check In (Cancel)",
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ] else ...[
+                // Standard NO / YES buttons
+                Row(
+                  children: [
+                    // NO Button
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF475569), width: 1.5),
+                          backgroundColor: const Color(0xFF1E293B),
+                          foregroundColor: const Color(0xFF94A3B8),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () {
+                          dialogTimer?.cancel();
+                          Navigator.of(ctx).pop({'confirmed': false});
+                        },
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.close_rounded, size: 18, color: Color(0xFFEF4444)),
+                            SizedBox(width: 6),
+                            Text(
+                              'NO',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+
+                    // YES Button
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: accentColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          elevation: 4,
+                          shadowColor: accentColor.withValues(alpha: 0.5),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () {
+                          dialogTimer?.cancel();
+                          Navigator.of(ctx).pop({'confirmed': true, 'cancelTimeOff': false});
+                        },
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_rounded, size: 20, color: Colors.white),
+                            SizedBox(width: 6),
+                            Text(
+                              'YES',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -927,7 +1141,7 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
     );
 
     dialogTimer.cancel();
-    return confirmed == true;
+    return result;
   }
 
   Future<void> _showCelebrationDialog({
@@ -1165,7 +1379,7 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444).withOpacity(0.12),
+                    color: const Color(0xFFEF4444).withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.block_rounded, size: 64, color: Color(0xFFEF4444)),
