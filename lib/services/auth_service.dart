@@ -544,9 +544,6 @@ class AuthService with ChangeNotifier {
     return _canAccessAttendancePortal;
   }
 
-  /// Backward compatibility alias
-  Future<bool> refreshFaceAttendancePermission() => refreshAttendanceTerminalPermission();
-
   void setMustChangePassword(bool value) async {
     _mustChangePassword = value;
     final prefs = await SharedPreferences.getInstance();

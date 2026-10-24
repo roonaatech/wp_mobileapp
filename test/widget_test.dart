@@ -171,5 +171,8 @@ class MockAuthService extends ChangeNotifier implements AuthService {
   bool get isWfhToday => false;
 
   @override
+  bool get isAttendanceModuleEnabled => true;
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

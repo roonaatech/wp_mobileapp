@@ -768,9 +768,6 @@ class AttendanceService with ChangeNotifier {
     }
   }
 
-  /// Backward compatibility alias
-  Future<Map<String, dynamic>> getFaceStatus() => getTerminalStatus();
-
   /// Fetch list of all active staff members for the attendance kiosk terminal
   Future<List<Map<String, dynamic>>> getStaffList() async {
     if (token == null) {

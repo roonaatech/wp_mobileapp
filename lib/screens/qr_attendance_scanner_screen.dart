@@ -28,8 +28,6 @@ class QrAttendanceScannerScreen extends StatefulWidget {
   State<QrAttendanceScannerScreen> createState() => _QrAttendanceScannerScreenState();
 }
 
-typedef NativeFaceScannerScreen = QrAttendanceScannerScreen;
-
 class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   CameraController? _cameraController;

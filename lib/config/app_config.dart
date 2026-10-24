@@ -129,7 +129,6 @@ class AppConfig {
   // Attendance & Kiosk Terminal endpoints
   static String get attendanceStatus => '$apiBaseUrl/api/attendance/status';
   static String get terminalStatus => '$apiBaseUrl/api/attendance/terminal-status';
-  static String get faceStatus => '$apiBaseUrl/api/attendance/terminal-status'; // Backward-compat alias
   static String get attendanceStaffList => '$apiBaseUrl/api/attendance/staff-list';
   static String get attendanceKioskRecord => '$apiBaseUrl/api/attendance/kiosk-record';
   static String get myAttendanceBadge => '$apiBaseUrl/api/attendance/my-badge';

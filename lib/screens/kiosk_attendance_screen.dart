@@ -13,8 +13,6 @@ class KioskAttendanceScreen extends StatefulWidget {
   State<KioskAttendanceScreen> createState() => _KioskAttendanceScreenState();
 }
 
-typedef FaceAttendanceScreen = KioskAttendanceScreen;
-
 class _KioskAttendanceScreenState extends State<KioskAttendanceScreen> with WidgetsBindingObserver {
   late Timer _clockTimer;
   DateTime _currentTime = DateTime.now();
