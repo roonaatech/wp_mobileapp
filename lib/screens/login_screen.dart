@@ -1738,7 +1738,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       Center(
                         child: Text(
-                          '© ${DateTime.now().year} WorkPulse • All rights reserved',
+                          '© ${ISTHelper.now().year} WorkPulse • All rights reserved',
                           style: const TextStyle(
                             fontFamily: 'Poppins',
                             fontSize: 10.5,

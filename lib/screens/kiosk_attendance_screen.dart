@@ -15,7 +15,7 @@ class KioskAttendanceScreen extends StatefulWidget {
 
 class _KioskAttendanceScreenState extends State<KioskAttendanceScreen> with WidgetsBindingObserver {
   late Timer _clockTimer;
-  DateTime _currentTime = DateTime.now();
+  DateTime _currentTime = ISTHelper.now();
 
   @override
   void initState() {
@@ -24,7 +24,7 @@ class _KioskAttendanceScreenState extends State<KioskAttendanceScreen> with Widg
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
         setState(() {
-          _currentTime = DateTime.now();
+          _currentTime = ISTHelper.now();
         });
       }
     });
@@ -260,7 +260,7 @@ class _KioskAttendanceScreenState extends State<KioskAttendanceScreen> with Widg
   }
 
   Widget _buildLiveClockBanner() {
-    final dateStr = DateFormat('EEEE, MMMM d, yyyy').format(_currentTime);
+    final dateStr = '${DateFormat('EEEE').format(_currentTime)}, ${ISTHelper.formatDate(_currentTime)}';
     final timeStr = ISTHelper.formatTime(_currentTime);
 
     return Container(

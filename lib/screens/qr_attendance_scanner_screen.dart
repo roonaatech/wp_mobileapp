@@ -562,8 +562,8 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
         final recordedAction = confirmResult['type']?.toString() ?? action;
         final confEmployeeName = confirmResult['employeeName']?.toString() ?? employeeName;
         final confTimestamp = confirmResult['timestamp'] != null
-            ? ISTHelper.formatTime(DateTime.tryParse(confirmResult['timestamp'].toString()) ?? DateTime.now())
-            : ISTHelper.formatTime(DateTime.now());
+            ? ISTHelper.formatTime(confirmResult['timestamp'])
+            : ISTHelper.formatTime(ISTHelper.now());
         final confDuration = confirmResult['duration']?.toString() ?? duration;
 
         HapticFeedback.heavyImpact();
@@ -585,8 +585,8 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
       final recordedAction = result['type']?.toString() ?? 'CHECK_IN';
       final employeeName = result['employeeName']?.toString() ?? 'Employee';
       final timestamp = result['timestamp'] != null
-          ? ISTHelper.formatTime(DateTime.tryParse(result['timestamp'].toString()) ?? DateTime.now())
-          : ISTHelper.formatTime(DateTime.now());
+          ? ISTHelper.formatTime(result['timestamp'])
+          : ISTHelper.formatTime(ISTHelper.now());
       final duration = result['duration']?.toString();
 
       HapticFeedback.heavyImpact();
@@ -797,7 +797,7 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          timestamp.isNotEmpty ? timestamp : ISTHelper.formatTime(DateTime.now()),
+                          timestamp.isNotEmpty ? timestamp : ISTHelper.formatTime(ISTHelper.now()),
                           style: const TextStyle(
                             fontFamily: 'Poppins',
                             fontSize: 13,

@@ -82,9 +82,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
   }
 
   String _formatTimeOfDay(TimeOfDay time) {
-    final now = DateTime.now();
-    final dt = DateTime(now.year, now.month, now.day, time.hour, time.minute);
-    return ISTHelper.formatTime(dt);
+    return ISTHelper.formatTime(time);
   }
 
   bool get _isBeforeOfficeHours {
@@ -676,7 +674,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
         : 'Select Date';
 
     final timeText = _selectedEndTime != null
-        ? ISTHelper.formatTime(DateTime(2020, 1, 1, _selectedEndTime!.hour, _selectedEndTime!.minute))
+        ? ISTHelper.formatTime(_selectedEndTime!)
         : 'Select Time';
 
     return Container(
@@ -986,7 +984,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          ISTHelper.formatTime(DateTime(2000, 1, 1, _startTime!.hour, _startTime!.minute)),
+                          ISTHelper.formatTime(_startTime!),
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,

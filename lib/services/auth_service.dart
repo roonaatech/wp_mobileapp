@@ -633,14 +633,35 @@ class AuthService with ChangeNotifier {
     try {
       final settings = await fetchGlobalSettings(token: _token);
       if (settings != null) {
+        if (settings['application_timezone'] != null) {
+          await ISTHelper.setTimezone(settings['application_timezone']!);
+        }
+        if (settings['application_date_format'] != null && settings['application_time_format'] != null) {
+          await ISTHelper.setFormatSettings(
+            settings['application_date_format']!,
+            settings['application_time_format']!,
+          );
+        }
+        final prefs = await SharedPreferences.getInstance();
+        if (settings['office_start_time'] != null) {
+          await prefs.setString('office_start_time', settings['office_start_time']!);
+        }
+        if (settings['office_end_time'] != null) {
+          await prefs.setString('office_end_time', settings['office_end_time']!);
+        }
+        if (settings['leave_past_days_allowed'] != null) {
+          await prefs.setString('leave_past_days_allowed', settings['leave_past_days_allowed']!);
+        }
+        if (settings['time_off_past_days_allowed'] != null) {
+          await prefs.setString('time_off_past_days_allowed', settings['time_off_past_days_allowed']!);
+        }
         final attEnabledStr = settings['module_attendance_enabled'] ?? 'true';
         final bool isEnabled = attEnabledStr != 'false';
         if (_isAttendanceModuleEnabled != isEnabled) {
           _isAttendanceModuleEnabled = isEnabled;
-          notifyListeners();
         }
-        final prefs = await SharedPreferences.getInstance();
         await prefs.setString('module_attendance_enabled', attEnabledStr);
+        notifyListeners();
       }
     } catch (e) {
       print('Error refreshing global settings: $e');

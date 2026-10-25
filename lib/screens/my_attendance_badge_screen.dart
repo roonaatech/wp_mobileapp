@@ -6,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/attendance_service.dart';
 import '../services/auth_service.dart';
+import '../utils/ist_helper.dart';
 
 class MyAttendanceBadgeScreen extends StatefulWidget {
   final VoidCallback? onBackToHome;
@@ -414,8 +415,10 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
 
   /// Interactive Modal Prompt shown when user attempts Check-In while having scheduled time-off
   Future<void> _showScheduledTimeOffDialog(Map<String, dynamic> timeOff) async {
-    final String timeRange = timeOff['timeRange']?.toString() ??
-        '${timeOff['formattedStartTime'] ?? timeOff['start_time']} – ${timeOff['formattedEndTime'] ?? timeOff['end_time']}';
+    final String timeRange = (timeOff['start_time'] != null && timeOff['end_time'] != null)
+        ? '${ISTHelper.formatTime(timeOff['start_time'])} – ${ISTHelper.formatTime(timeOff['end_time'])}'
+        : (timeOff['timeRange']?.toString() ??
+            '${timeOff['formattedStartTime'] ?? timeOff['start_time']} – ${timeOff['formattedEndTime'] ?? timeOff['end_time']}');
     final String status = timeOff['status']?.toString() ?? 'Approved';
     final String? reason = timeOff['reason']?.toString();
 
@@ -951,11 +954,11 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
         return holidayName != null ? 'Company Holiday: $holidayName' : 'Company Holiday';
       case 'CHECKED_IN':
         return checkInTime != null
-            ? 'Checked In: $checkInTime'
+            ? 'Checked In: ${ISTHelper.formatTime(checkInTime)}'
             : 'Checked In Today';
       case 'COMPLETED':
         return checkOutTime != null
-            ? 'Completed (Out: $checkOutTime)'
+            ? 'Completed (Out: ${ISTHelper.formatTime(checkOutTime)})'
             : 'Attendance Complete';
       case 'ON_LEAVE':
         return 'On Approved Leave Today';
@@ -1378,7 +1381,7 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                                     ),
                                     if (checkInTime != null)
                                       Text(
-                                        'In at $checkInTime',
+                                        'In at ${ISTHelper.formatTime(checkInTime)}',
                                         style: const TextStyle(
                                           color: Color(0xFFD1FAE5),
                                           fontSize: 11,
@@ -1471,7 +1474,9 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                                           ),
                                           const SizedBox(height: 3),
                                           Text(
-                                            todayTimeOff['timeRange']?.toString() ?? '',
+                                            (todayTimeOff['start_time'] != null && todayTimeOff['end_time'] != null)
+                                                ? '${ISTHelper.formatTime(todayTimeOff['start_time'])} – ${ISTHelper.formatTime(todayTimeOff['end_time'])}'
+                                                : (todayTimeOff['timeRange']?.toString() ?? ''),
                                             style: const TextStyle(
                                               color: Color(0xFFFDE68A),
                                               fontSize: 13,
@@ -1783,7 +1788,9 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                                           ),
                                           const SizedBox(height: 3),
                                           Text(
-                                            todayTimeOff['timeRange']?.toString() ?? '',
+                                            (todayTimeOff['start_time'] != null && todayTimeOff['end_time'] != null)
+                                                ? '${ISTHelper.formatTime(todayTimeOff['start_time'])} – ${ISTHelper.formatTime(todayTimeOff['end_time'])}'
+                                                : (todayTimeOff['timeRange']?.toString() ?? ''),
                                             style: const TextStyle(
                                               color: Color(0xFFFDE68A),
                                               fontSize: 13,

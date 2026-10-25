@@ -521,7 +521,9 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                     children: [
                       Text(
                         _startDate != null && _endDate != null
-                            ? '${ISTHelper.formatDate(_startDate!)} - ${ISTHelper.formatDate(_endDate!)}'
+                            ? (_startDate!.year == _endDate!.year && _startDate!.month == _endDate!.month && _startDate!.day == _endDate!.day
+                                ? ISTHelper.formatDate(_startDate!)
+                                : '${ISTHelper.formatDate(_startDate!)} - ${ISTHelper.formatDate(_endDate!)}')
                             : 'Select date range',
                         style: const TextStyle(fontSize: 14),
                       ),

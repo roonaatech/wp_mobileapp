@@ -29,7 +29,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
   String? _todayAttendanceStatus;
   Map<DateTime, String> _holidaysMap = {};
   int _timeOffPastDaysAllowed = 0;
-  DateTime _minTimeOffDate = DateTime.now();
+  DateTime _minTimeOffDate = ISTHelper.now();
 
   DateTime _computeMinTimeOffDate(int pastDaysAllowed) {
     final today = ISTHelper.now();
@@ -303,9 +303,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
   }
 
   String _formatTimeOfDay(TimeOfDay time) {
-    final now = DateTime.now();
-    final dt = DateTime(now.year, now.month, now.day, time.hour, time.minute);
-    return ISTHelper.formatTime(dt);
+    return ISTHelper.formatTime(time);
   }
 
   bool get _isOutsideOfficeHours {

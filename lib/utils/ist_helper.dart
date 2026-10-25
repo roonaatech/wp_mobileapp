@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
@@ -137,43 +138,112 @@ class ISTHelper {
   static DateTime nowIST() => now();
   static DateTime toIST(DateTime utcTime) => toAppTimezone(utcTime);
 
+  static String get dateFormat => _dateFormat;
+  static String get timeFormat => _timeFormat;
+
   // ============================================================================
   // Formatting methods based on Global Settings
   // ============================================================================
 
-  /// Format date according to application settings
-  static String formatDate(DateTime date, {bool omitYear = false}) {
-    String pattern = 'MMM d, yyyy'; // default "MMM DD, YYYY" equivalent
-    if (_dateFormat == 'DD/MM/YYYY') pattern = 'dd/MM/yyyy';
-    if (_dateFormat == 'MM/DD/YYYY') pattern = 'MM/dd/yyyy';
-    if (_dateFormat == 'YYYY-MM-DD') pattern = 'yyyy-MM-dd';
-    
-    if (omitYear) {
-      if (_dateFormat == 'DD/MM/YYYY') {
-        pattern = 'dd/MM';
-      } else if (_dateFormat == 'MM/DD/YYYY') {
-        pattern = 'MM/dd';
-      } else if (_dateFormat == 'YYYY-MM-DD') {
-        pattern = 'MM-dd';
-      } else {
-        pattern = 'MMM d';
-      }
+  /// Format date according to application settings.
+  /// Accepts [DateTime] or [String] (e.g. 'YYYY-MM-DD' or ISO timestamp).
+  static String formatDate(dynamic date, {bool omitYear = false}) {
+    if (date == null) return '';
+    DateTime dt;
+    if (date is DateTime) {
+      dt = date;
+    } else {
+      final str = date.toString().trim();
+      if (str.isEmpty || str == 'null') return '';
+      dt = parseUTCtoAppTimezone(str);
     }
-    
-    return DateFormat(pattern).format(date);
+
+    String pattern;
+    switch (_dateFormat) {
+      case 'DD/MM/YYYY':
+        pattern = omitYear ? 'dd/MM' : 'dd/MM/yyyy';
+        break;
+      case 'DD-MM-YYYY':
+        pattern = omitYear ? 'dd-MM' : 'dd-MM-yyyy';
+        break;
+      case 'MM/DD/YYYY':
+        pattern = omitYear ? 'MM/dd' : 'MM/dd/yyyy';
+        break;
+      case 'MM-DD-YYYY':
+        pattern = omitYear ? 'MM-dd' : 'MM-dd-yyyy';
+        break;
+      case 'YYYY-MM-DD':
+        pattern = omitYear ? 'MM-dd' : 'yyyy-MM-dd';
+        break;
+      case 'YYYY/MM/DD':
+        pattern = omitYear ? 'MM/dd' : 'yyyy/MM/dd';
+        break;
+      case 'DD MMM YYYY':
+        pattern = omitYear ? 'dd MMM' : 'dd MMM yyyy';
+        break;
+      case 'DD MMM, YYYY':
+        pattern = omitYear ? 'dd MMM' : 'dd MMM, yyyy';
+        break;
+      case 'MMM DD, YYYY':
+      default:
+        pattern = omitYear ? 'MMM dd' : 'MMM dd, yyyy';
+        break;
+    }
+
+    return DateFormat(pattern).format(dt);
   }
 
-  /// Format time according to application settings
-  static String formatTime(DateTime time) {
-    if (_timeFormat == '24h') {
-      return DateFormat('HH:mm').format(time);
+  /// Format time according to application settings.
+  /// Accepts [DateTime], [TimeOfDay], or [String] (e.g. '09:30:00', '14:30', or ISO timestamp).
+  static String formatTime(dynamic time) {
+    if (time == null) return '';
+    DateTime dt;
+    if (time is DateTime) {
+      dt = time;
+    } else if (time is TimeOfDay) {
+      dt = DateTime(2000, 1, 1, time.hour, time.minute);
     } else {
-      return DateFormat('h:mm a').format(time);
+      final str = time.toString().trim();
+      if (str.isEmpty || str == 'null') return '';
+      // If time string is HH:mm:ss or HH:mm
+      if (str.contains(':') && !str.contains('T') && !str.contains(' ') && !str.contains('-')) {
+        final parts = str.split(':');
+        final h = int.tryParse(parts[0]) ?? 0;
+        final m = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+        dt = DateTime(2000, 1, 1, h, m);
+      } else {
+        dt = parseUTCtoAppTimezone(str);
+      }
+    }
+
+    if (_timeFormat == '24h') {
+      return DateFormat('HH:mm').format(dt);
+    } else {
+      return DateFormat('hh:mm a').format(dt);
     }
   }
 
   /// Format date and time according to application settings
-  static String formatDateTime(DateTime dateTime) {
-    return '${formatDate(dateTime)} ${formatTime(dateTime)}';
+  static String formatDateTime(dynamic dateTime) {
+    if (dateTime == null) return '';
+    DateTime dt;
+    if (dateTime is DateTime) {
+      dt = dateTime;
+    } else {
+      final str = dateTime.toString().trim();
+      if (str.isEmpty || str == 'null') return '';
+      dt = parseUTCtoAppTimezone(str);
+    }
+    return '${formatDate(dt)} ${formatTime(dt)}';
+  }
+
+  /// Format a time range according to application settings
+  static String formatTimeRange(dynamic start, dynamic end) {
+    final startStr = formatTime(start);
+    final endStr = formatTime(end);
+    if (startStr.isEmpty) return endStr;
+    if (endStr.isEmpty) return startStr;
+    return '$startStr – $endStr';
   }
 }
+
