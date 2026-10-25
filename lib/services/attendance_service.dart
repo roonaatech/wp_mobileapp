@@ -481,7 +481,12 @@ class AttendanceService with ChangeNotifier {
       );
 
       if (response.statusCode != 200) {
-        throw Exception('Failed to start on-duty');
+        String message = 'Failed to start on-duty';
+        try {
+          final body = json.decode(response.body);
+          message = body['message'] ?? message;
+        } catch (_) {}
+        throw Exception(message);
       }
       await ActivityLogger.logOnDutyStarted(clientName, location);
       notifyListeners();

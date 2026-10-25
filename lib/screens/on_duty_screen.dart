@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/attendance_service.dart';
+import '../services/auth_service.dart';
 import '../utils/ist_helper.dart';
 import '../utils/dialogs.dart';
 
@@ -26,6 +28,8 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
   DateTime? _startTime;
   bool _isTodayHoliday = false;
   String? _todayHolidayName;
+  TimeOfDay _officeStartTime = const TimeOfDay(hour: 9, minute: 30);
+  TimeOfDay _officeEndTime = const TimeOfDay(hour: 18, minute: 30);
 
   DateTime? _editStartTime;
   DateTime? _editEndTime;
@@ -37,11 +41,57 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
   void initState() {
     super.initState();
     _checkTodayHoliday();
+    _loadOfficeHours();
     if (widget.existingLog != null) {
       _initializeForEdit();
     } else {
       _checkActiveOnDuty();
     }
+  }
+
+  Future<void> _loadOfficeHours() async {
+    try {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final settings = await AuthService.fetchGlobalSettings(token: authService.token);
+      String? startStr;
+      String? endStr;
+      if (settings != null) {
+        startStr = settings['office_start_time'];
+        endStr = settings['office_end_time'];
+        final prefs = await SharedPreferences.getInstance();
+        if (startStr != null) await prefs.setString('office_start_time', startStr);
+        if (endStr != null) await prefs.setString('office_end_time', endStr);
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        startStr = prefs.getString('office_start_time');
+        endStr = prefs.getString('office_end_time');
+      }
+
+      if (startStr != null && startStr.contains(':')) {
+        final parts = startStr.split(':');
+        _officeStartTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+      }
+      if (endStr != null && endStr.contains(':')) {
+        final parts = endStr.split(':');
+        _officeEndTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      print('Error loading office hours in on-duty: $e');
+    }
+  }
+
+  String _formatTimeOfDay(TimeOfDay time) {
+    final now = DateTime.now();
+    final dt = DateTime(now.year, now.month, now.day, time.hour, time.minute);
+    return ISTHelper.formatTime(dt);
+  }
+
+  bool get _isBeforeOfficeHours {
+    final now = ISTHelper.now();
+    final currentMinutes = now.hour * 60 + now.minute;
+    final officeStartMinutes = _officeStartTime.hour * 60 + _officeStartTime.minute;
+    return currentMinutes < officeStartMinutes;
   }
 
   Future<void> _checkTodayHoliday() async {
@@ -315,6 +365,13 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
       showErrorDialog(context, 'Today is a company holiday ($_todayHolidayName). On-duty visits cannot be started today.');
       return;
     }
+    if (_isBeforeOfficeHours) {
+      showErrorDialog(
+        context,
+        'On-duty cannot be started before office hours start time (${_formatTimeOfDay(_officeStartTime)}).',
+      );
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     
     setState(() => _isLoading = true);
@@ -421,6 +478,60 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (widget.existingLog == null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFBBF7D0)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.schedule, size: 16, color: Color(0xFF16A34A)),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Office Hours: ${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF15803D),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (_isBeforeOfficeHours && widget.existingLog == null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFF59E0B)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Office hours start at ${_formatTimeOfDay(_officeStartTime)}. On-duty visits cannot be started before office hours.',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF92400E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           if (_isTodayHoliday && widget.existingLog == null)
             Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
@@ -524,7 +635,7 @@ class _OnDutyScreenState extends State<OnDutyScreen> {
           ],
           const SizedBox(height: 24),
           ElevatedButton(
-            onPressed: (_isLoading || (_isTodayHoliday && widget.existingLog == null)) ? null : (widget.existingLog != null ? _updateOnDuty : _startOnDuty),
+            onPressed: (_isLoading || (_isTodayHoliday && widget.existingLog == null) || (_isBeforeOfficeHours && widget.existingLog == null)) ? null : (widget.existingLog != null ? _updateOnDuty : _startOnDuty),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF3B82F6),
               foregroundColor: Colors.white,

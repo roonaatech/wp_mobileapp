@@ -204,6 +204,16 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
         final parts = endStr.split(':');
         _officeEndTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
       }
+      if (widget.existingRequest == null) {
+        _startTime ??= _officeStartTime;
+        if (_endTime == null) {
+          final startMinutes = _officeStartTime.hour * 60 + _officeStartTime.minute;
+          final officeEndMinutes = _officeEndTime.hour * 60 + _officeEndTime.minute;
+          final targetMinutes = startMinutes + 120;
+          final clampedMinutes = targetMinutes > officeEndMinutes ? officeEndMinutes : targetMinutes;
+          _endTime = TimeOfDay(hour: clampedMinutes ~/ 60, minute: clampedMinutes % 60);
+        }
+      }
       if (mounted) setState(() {});
     } catch (e) {
       print('Error loading office hours: $e');
@@ -360,7 +370,14 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
 
         if (isStart) {
           _startTime = picked;
-          if (pickedMinutes < officeStartMinutes || pickedMinutes >= officeEndMinutes) {
+          if (pickedMinutes < officeStartMinutes) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Time-off start time cannot be before office start time (${_formatTimeOfDay(_officeStartTime)}).'),
+                backgroundColor: Colors.red[700],
+              ),
+            );
+          } else if (pickedMinutes >= officeEndMinutes) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Start time must be within office hours (${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)})'),
@@ -446,10 +463,18 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
       return;
     }
 
-    if (startMinutes < officeStartMinutes || startMinutes >= officeEndMinutes) {
+    if (startMinutes < officeStartMinutes) {
       showErrorDialog(
         context,
-        'Start time (${_formatTime(_startTime)}) must be within configured office hours (${_formatTimeOfDay(_officeStartTime)} - ${_formatTimeOfDay(_officeEndTime)}). Requests outside office hours are not allowed.',
+        'Time-off start time (${_formatTime(_startTime)}) cannot be before office start time (${_formatTimeOfDay(_officeStartTime)}). Requests must start on or after ${_formatTimeOfDay(_officeStartTime)}.',
+      );
+      return;
+    }
+
+    if (startMinutes >= officeEndMinutes) {
+      showErrorDialog(
+        context,
+        'Start time (${_formatTime(_startTime)}) cannot be on or after office end time (${_formatTimeOfDay(_officeEndTime)}).',
       );
       return;
     }
