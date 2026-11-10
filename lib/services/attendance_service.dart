@@ -882,6 +882,7 @@ class AttendanceService with ChangeNotifier {
     String? confirmationToken,
     bool? confirmed,
     bool cancelTimeOff = false,
+    bool stopTimeOff = false,
     double? latitude,
     double? longitude,
     String? phoneModel,
@@ -901,6 +902,7 @@ class AttendanceService with ChangeNotifier {
             if (confirmationToken != null) 'confirmationToken': confirmationToken,
             if (confirmed != null) 'confirmed': confirmed,
             if (cancelTimeOff) 'cancelTimeOff': true,
+            if (stopTimeOff) 'stopTimeOff': true,
             if (latitude != null) 'latitude': latitude.toString(),
             if (longitude != null) 'longitude': longitude.toString(),
             'phone_model': phoneModel ?? 'WorkPulse Mobile Kiosk',
@@ -954,6 +956,7 @@ class AttendanceService with ChangeNotifier {
     double? longitude,
     String? notes,
     bool cancelTimeOff = false,
+    bool stopTimeOff = false,
   }) async {
     if (token == null) {
       throw Exception('Not authenticated');
@@ -978,6 +981,7 @@ class AttendanceService with ChangeNotifier {
             if (longitude != null) 'longitude': longitude,
             if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
             if (cancelTimeOff) 'cancelTimeOff': true,
+            if (stopTimeOff) 'stopTimeOff': true,
           }),
         )
         .timeout(const Duration(seconds: 20));

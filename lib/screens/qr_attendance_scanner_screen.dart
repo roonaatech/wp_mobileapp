@@ -541,6 +541,7 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
         }
 
         final bool cancelTimeOff = confirmChoice['cancelTimeOff'] == true;
+        final bool stopTimeOff = confirmChoice['stopTimeOff'] == true;
 
         // Confirmed by user -> execute attendance record
         setState(() {
@@ -552,6 +553,7 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
           confirmationToken: confirmationToken,
           confirmed: true,
           cancelTimeOff: cancelTimeOff,
+          stopTimeOff: stopTimeOff,
           latitude: position?.latitude,
           longitude: position?.longitude,
           phoneModel: phoneModel,
@@ -663,6 +665,7 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
     final actionLabel = isCheckIn ? 'Check In' : 'Check Out';
     final accentColor = isCheckIn ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
     final hasTimeOff = isCheckIn && todayTimeOff != null;
+    final isTimeOffInProgress = hasTimeOff && (todayTimeOff['isInProgress'] == true);
 
     final countdownNotifier = ValueNotifier<int>(30);
     Timer? dialogTimer;
@@ -855,10 +858,12 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
                         children: [
                           const Icon(Icons.schedule_rounded, size: 16, color: Color(0xFFF59E0B)),
                           const SizedBox(width: 6),
-                          const Expanded(
+                          Expanded(
                             child: Text(
-                              'Scheduled Time-Off Active',
-                              style: TextStyle(
+                              isTimeOffInProgress
+                                  ? 'Time-Off Currently In Progress'
+                                  : 'Scheduled Time-Off Active',
+                              style: const TextStyle(
                                 fontFamily: 'Poppins',
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -895,9 +900,11 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
                         ),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Checking in early? Cancel to preserve your monthly quota, or keep it to step out later.',
-                        style: TextStyle(
+                      Text(
+                        isTimeOffInProgress
+                            ? 'Checking in during time-off? Cancel time-off to preserve quota, or stop time-off and update its end time to check-in time.'
+                            : 'Checking in early? Cancel to preserve your monthly quota, or keep it to step out later.',
+                        style: const TextStyle(
                           fontFamily: 'Poppins',
                           fontSize: 10.5,
                           color: Color(0xFFCBD5E1),
@@ -942,7 +949,11 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
                     ),
                     onPressed: () {
                       dialogTimer?.cancel();
-                      Navigator.of(ctx).pop({'confirmed': true, 'cancelTimeOff': true});
+                      Navigator.of(ctx).pop({
+                        'confirmed': true,
+                        'cancelTimeOff': true,
+                        'stopTimeOff': false,
+                      });
                     },
                     child: const Column(
                       mainAxisSize: MainAxisSize.min,
@@ -977,7 +988,7 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
                 ),
                 const SizedBox(height: 8),
 
-                // Option 2: Keep Time-Off & Check In
+                // Option 2: Stop Time-Off (if in progress) OR Keep Time-Off (if upcoming)
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -990,19 +1001,25 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
                     ),
                     onPressed: () {
                       dialogTimer?.cancel();
-                      Navigator.of(ctx).pop({'confirmed': true, 'cancelTimeOff': false});
+                      Navigator.of(ctx).pop({
+                        'confirmed': true,
+                        'cancelTimeOff': false,
+                        'stopTimeOff': isTimeOffInProgress,
+                      });
                     },
-                    child: const Column(
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.schedule_rounded, size: 18),
-                            SizedBox(width: 6),
+                            const Icon(Icons.schedule_rounded, size: 18),
+                            const SizedBox(width: 6),
                             Text(
-                              'Keep Time-Off & Check In',
-                              style: TextStyle(
+                              isTimeOffInProgress
+                                  ? 'Stop Time-Off & Check In'
+                                  : 'Keep Time-Off & Check In',
+                              style: const TextStyle(
                                 fontFamily: 'Poppins',
                                 fontWeight: FontWeight.w800,
                                 fontSize: 13,
@@ -1010,10 +1027,12 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
                             ),
                           ],
                         ),
-                        SizedBox(height: 2),
+                        const SizedBox(height: 2),
                         Text(
-                          'Step Out Later',
-                          style: TextStyle(
+                          isTimeOffInProgress
+                              ? 'Update End Time as Check-In Time'
+                              : 'Step Out Later',
+                          style: const TextStyle(
                             fontFamily: 'Poppins',
                             fontSize: 10,
                             color: Color(0xFFBFDBFE),

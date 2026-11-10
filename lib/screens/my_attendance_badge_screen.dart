@@ -315,7 +315,11 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
     _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) => updateElapsed());
   }
 
-  Future<void> _handleWfhPunch(String action, {bool cancelTimeOff = false}) async {
+  Future<void> _handleWfhPunch(
+    String action, {
+    bool cancelTimeOff = false,
+    bool stopTimeOff = false,
+  }) async {
     if (!mounted) return;
     setState(() => _isPunching = true);
 
@@ -360,6 +364,7 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
         longitude: _longitude,
         notes: _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null,
         cancelTimeOff: cancelTimeOff,
+        stopTimeOff: stopTimeOff,
       );
 
       if (!mounted) return;
@@ -413,6 +418,27 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
     }
   }
 
+  int? _parseTimeToMinutes(dynamic rawTime) {
+    if (rawTime == null) return null;
+    final parts = rawTime.toString().trim().split(':');
+    if (parts.length < 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    return h * 60 + m;
+  }
+
+  bool _isTimeOffCurrentlyInProgress(Map<String, dynamic> timeOff) {
+    final startMins = _parseTimeToMinutes(timeOff['start_time']);
+    final endMins = _parseTimeToMinutes(timeOff['end_time']);
+    if (startMins != null && endMins != null) {
+      final now = ISTHelper.now();
+      final nowMins = now.hour * 60 + now.minute;
+      return nowMins >= startMins && nowMins <= endMins;
+    }
+    return timeOff['isInProgress'] == true;
+  }
+
   /// Interactive Modal Prompt shown when user attempts Check-In while having scheduled time-off
   Future<void> _showScheduledTimeOffDialog(Map<String, dynamic> timeOff) async {
     final String timeRange = (timeOff['start_time'] != null && timeOff['end_time'] != null)
@@ -421,6 +447,7 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
             '${timeOff['formattedStartTime'] ?? timeOff['start_time']} – ${timeOff['formattedEndTime'] ?? timeOff['end_time']}');
     final String status = timeOff['status']?.toString() ?? 'Approved';
     final String? reason = timeOff['reason']?.toString();
+    final bool isInProgress = _isTimeOffCurrentlyInProgress(timeOff);
 
     HapticFeedback.selectionClick();
 
@@ -475,23 +502,27 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                     child: const Icon(Icons.schedule_rounded, color: Color(0xFFFBBF24), size: 24),
                   ),
                   const SizedBox(width: 14),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Scheduled Time-Off Detected',
-                          style: TextStyle(
+                          isInProgress
+                              ? 'Time-Off Currently In Progress'
+                              : 'Scheduled Time-Off Detected',
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.2,
                           ),
                         ),
-                        SizedBox(height: 2),
+                        const SizedBox(height: 2),
                         Text(
-                          'You have time-off scheduled for today',
-                          style: TextStyle(
+                          isInProgress
+                              ? 'You are checking in during your active time-off window'
+                              : 'You have time-off scheduled for today',
+                          style: const TextStyle(
                             color: Color(0xFF94A3B8),
                             fontSize: 12,
                           ),
@@ -582,9 +613,11 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
               ),
               const SizedBox(height: 14),
 
-              const Text(
-                'Since you are checking in early, please choose an option:',
-                style: TextStyle(
+              Text(
+                isInProgress
+                    ? 'Since you are checking in between your time-off duration, please choose an option:'
+                    : 'Since you are checking in early, please choose an option:',
+                style: const TextStyle(
                   color: Color(0xFFCBD5E1),
                   fontSize: 12,
                   height: 1.3,
@@ -597,7 +630,7 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
               InkWell(
                 onTap: () {
                   Navigator.of(ctx).pop();
-                  _handleWfhPunch('CHECK_IN', cancelTimeOff: true);
+                  _handleWfhPunch('CHECK_IN', cancelTimeOff: true, stopTimeOff: false);
                 },
                 borderRadius: BorderRadius.circular(16),
                 child: Container(
@@ -652,7 +685,7 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                             ),
                             const SizedBox(height: 3),
                             const Text(
-                              'Working regular hours. Cancels request and preserves monthly quota.',
+                              'Cancel time-off request completely, preserve monthly quota, and register check-in.',
                               style: TextStyle(
                                 color: Color(0xFFA7F3D0),
                                 fontSize: 11,
@@ -668,11 +701,15 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
               ),
               const SizedBox(height: 10),
 
-              // Option 2: Keep Time-Off & Check In
+              // Option 2: Stop Time-Off (if in progress) OR Keep Time-Off (if upcoming)
               InkWell(
                 onTap: () {
                   Navigator.of(ctx).pop();
-                  _handleWfhPunch('CHECK_IN', cancelTimeOff: false);
+                  _handleWfhPunch(
+                    'CHECK_IN',
+                    cancelTimeOff: false,
+                    stopTimeOff: isInProgress,
+                  );
                 },
                 borderRadius: BorderRadius.circular(16),
                 child: Container(
@@ -680,7 +717,10 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                   decoration: BoxDecoration(
                     color: const Color(0xFF1E293B),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF475569)),
+                    border: Border.all(
+                      color: isInProgress ? const Color(0xFF38BDF8) : const Color(0xFF475569),
+                      width: isInProgress ? 1.5 : 1.0,
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -699,9 +739,11 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                           children: [
                             Row(
                               children: [
-                                const Text(
-                                  'Keep Time-Off & Check In',
-                                  style: TextStyle(
+                                Text(
+                                  isInProgress
+                                      ? 'Stop Time-Off & Check In'
+                                      : 'Keep Time-Off & Check In',
+                                  style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
@@ -711,13 +753,15 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF64748B).withValues(alpha: 0.3),
+                                    color: isInProgress
+                                        ? const Color(0xFF38BDF8).withValues(alpha: 0.25)
+                                        : const Color(0xFF64748B).withValues(alpha: 0.3),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
-                                  child: const Text(
-                                    'Step Out Later',
+                                  child: Text(
+                                    isInProgress ? 'Updates End Time' : 'Step Out Later',
                                     style: TextStyle(
-                                      color: Color(0xFFCBD5E1),
+                                      color: isInProgress ? const Color(0xFF7DD3FC) : const Color(0xFFCBD5E1),
                                       fontSize: 9,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -727,7 +771,9 @@ class _MyAttendanceBadgeScreenState extends State<MyAttendanceBadgeScreen>
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              'Checking in early now, but stepping out during $timeRange.',
+                              isInProgress
+                                  ? 'Stop time-off now, update time-off end time as check-in time, and register check-in.'
+                                  : 'Checking in early now, but stepping out during $timeRange.',
                               style: const TextStyle(
                                 color: Color(0xFF94A3B8),
                                 fontSize: 11,
