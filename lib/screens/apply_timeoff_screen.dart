@@ -801,7 +801,7 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
               const SizedBox(height: 24),
 
               ElevatedButton(
-                onPressed: (_isLoading || (_isTodayHoliday && widget.existingRequest == null) || _isOutsideOfficeHours || _isCurrentlyCheckedInToday || _isSelectedDateHoliday) ? null : _submit,
+                onPressed: (_isLoading || (_isTodayHoliday && widget.existingRequest == null) || _isOutsideOfficeHours || _isSelectedDateHoliday) ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
