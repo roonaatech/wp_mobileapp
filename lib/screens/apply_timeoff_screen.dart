@@ -438,13 +438,6 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
       return;
     }
 
-    if (_isCurrentlyCheckedInToday) {
-      showErrorDialog(
-        context,
-        'You are currently checked in today. Time-off can only be applied after checking out for the day.',
-      );
-      return;
-    }
     if (_startTime == null || _endTime == null) {
       showErrorDialog(context, 'Please select start and end times');
       return;
@@ -667,21 +660,21 @@ class _ApplyTimeOffScreenState extends State<ApplyTimeOffScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFEF3C7),
+                      color: const Color(0xFFF0FDFA),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFF59E0B)),
+                      border: Border.all(color: const Color(0xFF5EEAD4)),
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.info_outline, color: Color(0xFFB45309), size: 18),
+                        Icon(Icons.access_time, color: Color(0xFF0D9488), size: 18),
                         SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'You are currently checked in today. Time-off can only be applied after checking out for the day.',
+                            'You are checked in today. When returning from time-off, scan your badge at the kiosk (or stop time-off on your badge) to stop your time-off clock.',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: Color(0xFF92400E),
+                              color: Color(0xFF115E59),
                             ),
                           ),
                         ),

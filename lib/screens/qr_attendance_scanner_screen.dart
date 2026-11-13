@@ -662,10 +662,14 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
     Map<String, dynamic>? todayTimeOff,
   }) async {
     final isCheckIn = action == 'CHECK_IN';
-    final actionLabel = isCheckIn ? 'Check In' : 'Check Out';
-    final accentColor = isCheckIn ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
-    final hasTimeOff = isCheckIn && todayTimeOff != null;
+    final hasTimeOff = todayTimeOff != null;
     final isTimeOffInProgress = hasTimeOff && (todayTimeOff['isInProgress'] == true);
+    final actionLabel = isCheckIn
+        ? 'Check In'
+        : (hasTimeOff ? 'Time-Off Return / Check Out' : 'Check Out');
+    final accentColor = isCheckIn
+        ? const Color(0xFF10B981)
+        : (hasTimeOff ? const Color(0xFF3B82F6) : const Color(0xFFF59E0B));
 
     final countdownNotifier = ValueNotifier<int>(30);
     Timer? dialogTimer;
@@ -901,9 +905,11 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        isTimeOffInProgress
-                            ? 'Checking in during time-off? Cancel time-off to preserve quota, or stop time-off and update its end time to check-in time.'
-                            : 'Checking in early? Cancel to preserve your monthly quota, or keep it to step out later.',
+                        !isCheckIn
+                            ? 'Welcome back! Stop your time-off clock to resume work, cancel time-off, or check out for the day.'
+                            : (isTimeOffInProgress
+                                ? 'Checking in during time-off? Cancel time-off to preserve quota, or stop time-off and update its end time to check-in time.'
+                                : 'Checking in early? Cancel to preserve your monthly quota, or keep it to step out later.'),
                         style: const TextStyle(
                           fontFamily: 'Poppins',
                           fontSize: 10.5,
@@ -935,7 +941,7 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
               const SizedBox(height: 14),
 
               // Action Buttons:
-              if (hasTimeOff) ...[
+              if (hasTimeOff && isCheckIn) ...[
                 // Option 1: Cancel Time-Off & Check In
                 SizedBox(
                   width: double.infinity,
@@ -1076,6 +1082,167 @@ class _QrAttendanceScannerScreenState extends State<QrAttendanceScannerScreen>
                       ],
                     ),
                   ),
+                ),
+              ] else if (hasTimeOff && !isCheckIn) ...[
+                // Option 1: Stop Time-Off & Resume Work
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2563EB),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      elevation: 4,
+                    ),
+                    onPressed: () {
+                      dialogTimer?.cancel();
+                      Navigator.of(ctx).pop({
+                        'confirmed': true,
+                        'cancelTimeOff': false,
+                        'stopTimeOff': true,
+                      });
+                    },
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.schedule_rounded, size: 18),
+                            SizedBox(width: 6),
+                            Text(
+                              'Stop Time-Off & Resume Work',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Update End Time = Current Time (Remain Checked In)',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 10,
+                            color: Color(0xFFBFDBFE),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Option 2: Cancel Time-Off & Resume Work
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      elevation: 4,
+                    ),
+                    onPressed: () {
+                      dialogTimer?.cancel();
+                      Navigator.of(ctx).pop({
+                        'confirmed': true,
+                        'cancelTimeOff': true,
+                        'stopTimeOff': false,
+                      });
+                    },
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_circle_outline_rounded, size: 18),
+                            SizedBox(width: 6),
+                            Text(
+                              'Cancel Time-Off & Resume Work',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Preserves Monthly Quota (Remain Checked In)',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 10,
+                            color: Color(0xFFA7F3D0),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Option 3 & 4: Check Out for Day or Cancel Scan
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFF59E0B),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () {
+                          dialogTimer?.cancel();
+                          Navigator.of(ctx).pop({
+                            'confirmed': true,
+                            'cancelTimeOff': false,
+                            'stopTimeOff': false,
+                          });
+                        },
+                        child: const Text(
+                          'Check Out for Day',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF475569), width: 1.5),
+                          backgroundColor: const Color(0xFF1E293B),
+                          foregroundColor: const Color(0xFF94A3B8),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () {
+                          dialogTimer?.cancel();
+                          Navigator.of(ctx).pop({'confirmed': false});
+                        },
+                        child: const Text(
+                          'Cancel Scan',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11.5,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ] else ...[
                 // Standard NO / YES buttons
